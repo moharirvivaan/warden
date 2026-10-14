@@ -1,0 +1,8 @@
+.DS_Store
+build*/
+.deps/
+.cache/
+.superpowers/
+__pycache__/
+*.pyc
+.git-worktree-pointer.backup

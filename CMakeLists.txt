@@ -1,0 +1,22 @@
+cmake_minimum_required(VERSION 3.25)
+project(Warden VERSION 0.1.0 LANGUAGES C CXX)
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+find_package(LLVM 21.1.8 EXACT REQUIRED CONFIG)
+find_package(Clang REQUIRED CONFIG)
+add_executable(warden src/main.cpp src/analysis.cpp src/extraction.cpp src/report.cpp)
+target_include_directories(warden SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CLANG_INCLUDE_DIRS})
+target_include_directories(warden PRIVATE src)
+target_link_libraries(warden PRIVATE clang-cpp LLVM)
+target_compile_definitions(warden PRIVATE
+  WARDEN_RESOURCE_DIR="${LLVM_LIBRARY_DIR}/clang/21")
+target_compile_options(warden PRIVATE -Wall -Wextra -Wpedantic)
+include(CTest)
+if(BUILD_TESTING)
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  set(WARDEN_EXAMPLE "${CMAKE_SOURCE_DIR}/.deps/example-mod" CACHE PATH "Real Geode example")
+  add_test(NAME analyzer_contracts COMMAND ${CMAKE_COMMAND} -E env
+    "WARDEN_BINARY=$<TARGET_FILE:warden>" "WARDEN_EXAMPLE=${WARDEN_EXAMPLE}"
+    ${Python3_EXECUTABLE} -m unittest discover -s ${CMAKE_SOURCE_DIR}/tests -v)
+endif()
