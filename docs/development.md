@@ -54,6 +54,12 @@ the installed editor UI, or establish native Linux/Windows support. A fresh clon
 still needs the separately documented historical inputs for the full strict gate;
 one-command historical setup remains unfinished.
 
+The [first hosted run](https://github.com/moharirvivaan/warden/actions/runs/38663455168)
+on commit `9180aaa` succeeded: both editor jobs passed and the native job prepared
+the pinned SDK/example, built the analyzer, and passed all 60 selected contracts
+without skips. This provides fresh-runner evidence for that scope, not the full
+historical release gate or native Windows support.
+
 ## Run the real Geode example
 
 ```bash
@@ -207,3 +213,24 @@ game installation or publication require user authorization.
 
 The evidence-schema tests use the development dependency in
 `tests/requirements.txt`; the native analyzer and packaging commands do not.
+
+
+## Local interaction discovery
+
+`python3 scripts/prepare-interactions.py` builds a bounded catalog from the three
+pinned source caches recorded in `docs/toolchain-lock.json`. It requires the
+existing genuine SDK 5.10.1 BetterInfo CMake compiler database; missing inputs are
+setup failures, never substitute headers. C++ bytes are exported unchanged and
+compiler adaptations are explicit. Generated reports/provenance stay under
+ignored `build/interaction-catalog` and `.deps/interaction-catalog`.
+
+The editor's `warden.catalogPath` selects that directory. Default Analyze runs
+one native source scan, then retrieves catalog relationships; a catalog failure
+preserves primary diagnostics. Native behavior extraction records direct source
+call placement and selected SDK priority requests, not installed runtime order.
+The catalog is bounded to selected units and cannot certify compatibility.
+
+Use `editor/test/interactions-host.js` as the extension test entrypoint for the
+real prepared source workflow. Its result is `build/interaction-work/actual-host.json`.
+It verifies command/report integration, not rendered clicks or game behavior.
+See docs/showcase.md for the user's independent hands-on checks.

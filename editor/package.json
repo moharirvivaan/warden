@@ -29,6 +29,14 @@
       {
         "command": "warden.cancel",
         "title": "Warden: Cancel Analysis"
+      },
+      {
+        "command": "warden.interactions",
+        "title": "Warden: Show Interactions"
+      },
+      {
+        "command": "warden.compare",
+        "title": "Warden: Advanced Source Comparison"
       }
     ],
     "configuration": {
@@ -60,6 +68,21 @@
           "minimum": 10,
           "maximum": 3600,
           "description": "Maximum duration of a native analysis run."
+        },
+        "warden.catalogPath": {
+          "type": "string",
+          "default": "",
+          "description": "Prepared local interaction catalog folder. Development defaults to this checkout\u2019s build/interaction-catalog. Catalog setup is required for interaction discovery."
+        },
+        "warden.peerProjectPath": {
+          "type": "string",
+          "default": "",
+          "description": "Remembered advanced manual comparison source root. Remove comparison to select a different peer."
+        },
+        "warden.peerBuildPath": {
+          "type": "string",
+          "default": "",
+          "description": "Remembered compiler settings directory for advanced manual comparison."
         }
       }
     },

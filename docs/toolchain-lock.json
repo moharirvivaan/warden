@@ -40,6 +40,25 @@
       "repair_revision": "7afad587dede7309eddfc7e582c31a0dd8c5572a",
       "sdk": "5.10.1",
       "scope": "selected BIViewLayer.cpp source comparison; no runtime reproduction"
+    },
+    "interaction_catalog": {
+      "sdk": "5.10.1",
+      "scope": "selected source units, original C++ exported unchanged; genuine CMake flags adapted with real SDK PCH headers expanded textually; no historical or runtime build claim",
+      "nodeids": {
+        "repository": "geode-sdk/NodeIDs",
+        "revision": "fc9b3aa12a4eee67f0d26e3f115190cba2deddf1",
+        "unit": "src/LevelInfoLayer.cpp"
+      },
+      "betterinfo": {
+        "repository": "Cvolton/betterinfo-geode",
+        "revision": "04365ad20d13bd9618413f134fba6ff9ada074b7",
+        "unit": "src/hooks/LevelInfoLayer.cpp"
+      },
+      "server_api": {
+        "repository": "kingminer7/server-api",
+        "revision": "924dfc7511cf754fc41530ac9432bce7a67d4223",
+        "unit": "src/hooks/CCHttpClient.cpp"
+      }
     }
   }
 }

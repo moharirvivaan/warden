@@ -7,6 +7,20 @@ const {TextDecoder}=require('node:util');
 const object=x=>x!==null && typeof x==='object' && !Array.isArray(x);
 const location=x=>object(x) && typeof x.file==='string' && Number.isSafeInteger(x.line) && x.line>0 && Number.isSafeInteger(x.column) && x.column>0;
 const text=(x,...keys)=>object(x) && keys.every(k=>typeof x[k]==='string');
+function validateBehavior(b){
+  const bounded=a=>Array.isArray(a)&&a.length<=10000;
+  const numeric=n=>Number.isInteger(n)&&n>=-2147483648&&n<=2147483647;
+  const apis=['setHookPriority','setHookPriorityPre','setHookPriorityPost','setHookPriorityBefore','setHookPriorityAfter','setHookPriorityBeforePre','setHookPriorityAfterPre','setHookPriorityBeforePost','setHookPriorityAfterPost'];
+  if(!object(b)||b.scope!=='source_facts_only'||!bounded(b.forwarding_calls)||!bounded(b.priority_requests)||!bounded(b.unknown))throw new Error('Invalid hook behavior in report.');
+  for(const c of b.forwarding_calls)if(!object(c)||!location(c.location)||!['body','condition','conditional_branch','loop','nested_callable'].includes(c.context))throw new Error('Invalid hook behavior call.');
+  for(const p of b.priority_requests){
+    if(!text(p,'hook','api','status','relative_mod')||!location(p.location)||!apis.includes(p.api)||!['observed_constant','observed_relative','unknown'].includes(p.status)||![p.requested_value,p.pre_order_value].every(n=>n===null||numeric(n)))throw new Error('Invalid hook behavior priority.');
+    if(p.status==='observed_constant'&&(!numeric(p.requested_value)||!numeric(p.pre_order_value)||!['setHookPriority','setHookPriorityPre','setHookPriorityPost'].includes(p.api)||p.pre_order_value!==(p.api==='setHookPriorityPost'?-p.requested_value:p.requested_value)))throw new Error('Invalid hook behavior numeric semantics.');
+    if(p.status==='observed_relative'&&(!p.relative_mod||p.requested_value!==null||p.pre_order_value!==null||['setHookPriority','setHookPriorityPre','setHookPriorityPost'].includes(p.api)))throw new Error('Invalid hook behavior relative request.');
+    if(p.status==='unknown'&&p.pre_order_value!==null)throw new Error('Invalid hook behavior unknown ordering.');
+  }
+  for(const u of b.unknown)if(!text(u,'reason')||!location(u.location))throw new Error('Invalid hook behavior unknown.');
+}
 function parseReport(stdout,code){
   let r;try{r=JSON.parse(stdout);}catch{throw new Error('Analyzer returned invalid JSON; see Warden Output.');}
   const arrays=['files','hooks','helpers','unknown','findings'];
@@ -14,6 +28,7 @@ function parseReport(stdout,code){
     throw new Error('Unsupported or malformed Warden report.');
   if(!['complete','partial','setup_error'].includes(r.status)||({complete:0,partial:1,setup_error:2})[r.status]!==code)throw new Error('Analyzer status and exit code disagree.');
   for(const method of [...r.hooks,...r.helpers])if(!text(method,'target_class','method','signature')||!location(method.location))throw new Error('Invalid method location in report.');
+  for(const method of r.hooks)if(method.behavior!==undefined)validateBehavior(method.behavior);
   // Unknown/setup diagnostics may legitimately have an empty location.
   for(const u of r.unknown)if(!text(u,'reason')||!object(u.location))throw new Error('Invalid unknown record in report.');
   for(const f of r.files)if(!text(f,'file','status')||!Array.isArray(f.diagnostics)||f.diagnostics.some(d=>!text(d,'severity','message')||!object(d.location)))throw new Error('Invalid file record in report.');

@@ -1,4 +1,5 @@
 #include "extraction.hpp"
+#include "hook_behavior.hpp"
 #include "ownership.hpp"
 #include "array_bounds.hpp"
 #include <clang/AST/ASTConsumer.h>
@@ -264,10 +265,17 @@ public:
                 if (method->isImplicit()) continue;
                 Method result{record.modification.name, record.modification.targetClass,
                     method->getNameAsString(), method->getType().getCanonicalType().getAsString(context.getPrintingPolicy()), "",
-                    location(method->getLocation(), context.getSourceManager(), state.root)};
+                    location(method->getLocation(), context.getSourceManager(), state.root), {}};
                 auto hook = record.hooks.find(method->getCanonicalDecl());
                 if (hook != record.hooks.end()) {
-                    result.registration = hook->second; state.result.hooks.push_back(std::move(result));
+                    result.registration = hook->second;
+                    result.behavior = inspectHookBehavior(*method, *record.record, *record.base, context, state.result, state.root);
+                    auto sameName=std::count_if(record.hooks.begin(),record.hooks.end(),[&](const auto& item){return item.first->getNameAsString()==method->getNameAsString();});
+                    if(sameName>1&&!result.behavior->priorityRequests.empty()) {
+                        for(auto& request:result.behavior->priorityRequests){request.status="unknown";request.preOrderValue.reset();}
+                        result.behavior->unknown.push_back({"Priority name refers to multiple registered overloads; selected hook and ordering are unknown.",result.location});
+                    }
+                    state.result.hooks.push_back(std::move(result));
                 } else if (record.unsupportedMethods.contains(result.name)) {
                     state.result.unknown.push_back({"Unsupported Geode lifecycle registration: " + result.name, result.location});
                 } else if (isa<CXXConstructorDecl>(method) || isa<CXXDestructorDecl>(method) || method->getNameAsString() == "onModify") {

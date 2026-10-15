@@ -157,7 +157,24 @@ Report inspect(const fs::path& rootPath, const fs::path& buildPath) {
         }
     }
     auto methodKey = [](const Method& m) { return std::tuple(m.location.file, m.location.line, m.location.column, m.targetClass, m.name, m.signature); };
-    deduplicate(report.hooks, methodKey); deduplicate(report.helpers, methodKey);
+    std::sort(report.hooks.begin(),report.hooks.end(),[&](const auto& a,const auto& b){return methodKey(a)<methodKey(b);});
+    std::vector<Method> merged;
+    for(auto& hook:report.hooks) {
+        if(merged.empty()||methodKey(merged.back())!=methodKey(hook)) {merged.push_back(std::move(hook));continue;}
+        auto& previous=merged.back();
+        if(previous.behavior!=hook.behavior) {
+            if(!previous.behavior)previous.behavior=HookBehavior{};
+            if(hook.behavior) {
+                auto append=[](auto& a,const auto& b){for(const auto& item:b)if(std::find(a.begin(),a.end(),item)==a.end())a.push_back(item);};
+                append(previous.behavior->forwardingCalls,hook.behavior->forwardingCalls);
+                append(previous.behavior->priorityRequests,hook.behavior->priorityRequests);
+                append(previous.behavior->unknown,hook.behavior->unknown);
+            }
+            Unknown gap{"Behavior differs between translation units; combined ordering is unknown.",hook.location};
+            if(std::find(previous.behavior->unknown.begin(),previous.behavior->unknown.end(),gap)==previous.behavior->unknown.end())previous.behavior->unknown.push_back(gap);
+        }
+    }
+    report.hooks=std::move(merged); deduplicate(report.helpers, methodKey);
     deduplicate(report.modifications, [](const Modification& m) { return std::tuple(m.location.file, m.location.line, m.location.column, m.name, m.targetClass); });
     deduplicate(report.unknown, [](const Unknown& u) { return std::tuple(u.location.file, u.location.line, u.location.column, u.reason); });
     auto locationKey = [](const Location& l) { return std::tuple(l.file, l.line, l.column); };

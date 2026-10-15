@@ -23,10 +23,16 @@ macOS ARM64. Other platforms/configurations are not release-tested.
 
 - Compiler-resolved hook declarations and helpers with source navigation.
 - Limited deferred Cocos ownership and late array-bounds review findings.
+- Automatic relationship discovery against a prepared local real-mod catalog,
+  with pinned source links, source-call/priority facts and visible version gaps.
 - Compiler diagnostics, incomplete files, and explicit unknown coverage.
 - Cancellation and invalidation after source edits.
 - A bounds-guard patch for supported cases: preview, human approval, undo, and
   reanalysis. Ownership findings currently provide guidance without a patch.
+
+For interactions, select a prepared catalog under **Project setup → Interaction
+catalog**, then Analyze. No second source checkout is required. Catalog maintenance
+and public distribution are unfinished; missing data shows unavailable coverage.
 
 Findings are source-based risk reviews. Neither a finding nor a clean scan
 establishes runtime compatibility. Shared hook targets are normal. Cross-mod

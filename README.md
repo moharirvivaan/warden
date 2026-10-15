@@ -10,7 +10,7 @@ A local preflight companion for Geometry Dash mod developers, inside VS Code and
 
 **Local alpha · macOS ARM64 validated · Human-reviewed repairs**
 
-[Try it](#try-the-local-alpha) · [Features](#what-works-today) · [Roadmap](#where-warden-is-going) · [Development](docs/development.md)
+[Try it](#try-the-local-alpha) · [Features](#what-works-today) · [Next milestone](#next-milestone-install-and-test-without-a-guide) · [Roadmap](#where-warden-is-going) · [Development](docs/development.md)
 
 </div>
 
@@ -21,8 +21,9 @@ game’s behavior. Warden brings selected source risks into an editor sidebar, l
 them to the relevant code, explains its evidence, and shows where analysis stops.
 
 The broader goal is to help developers understand and test interactions between
-mods before release. **Cross-mod compatibility analysis is not implemented yet.**
-The current alpha establishes the source-analysis and reviewed-repair workflow.
+mods before release. The local alpha now discovers supported relationships in a
+small prepared catalog and shows hook-call/priority evidence. **Automatic conflict
+detection and runtime compatibility validation remain unimplemented.**
 
 ## What works today
 
@@ -32,6 +33,7 @@ The current alpha establishes the source-analysis and reviewed-repair workflow.
 | **Deferred ownership reviews** | Flag selected raw Cocos object captures used in queued callbacks and explain the lifetime concern. |
 | **Bounds reviews** | Identify supported `CCArray::objectAtIndex` accesses where an upper-bound exit happens too late. |
 | **Reviewed bounds repair** | Preview an early guard, approve the edit, and reanalyze. Undo stays available in the source editor. |
+| **Interaction discovery** | Analyze your source against a prepared local catalog; show declared relationships, shared hooks, forwarding/priority facts and specific review steps. No peer selection required. |
 | **Visible uncertainty** | Show compiler errors, incomplete files, unsupported constructs, and the configuration analyzed. |
 | **Native editor sidebar** | Geometry Dash-inspired styling, an original cube mascot, source navigation, cancellation, and optional analysis on save. |
 
@@ -41,6 +43,26 @@ machinery. A matching method name alone does not establish a supported hook.
 **Shared hook targets are normal—not proof of a conflict.** A clean scan is not a
 runtime safety verdict. Ownership reviews provide guidance, not generated repairs;
 neither rule proves general memory or bounds safety.
+
+## Current development snapshot
+
+The prepared interaction catalog contains pinned **NodeIDs, BetterInfo, and
+Server API** source reports, using a selected SDK 5.10.1 configuration. Analyze
+one project to find catalog relationships, inspect supported original-call and
+priority-request evidence, and navigate to your code or the peer's pinned source.
+The catalog covers selected translation units, with explicit SDK adaptations;
+it does not represent the entire ecosystem or reproduce historical builds.
+
+Coverage entries mean **Warden could not check something**. They are grouped
+separately from diagnostic findings. A file outside the scan is not a detected
+bug, and an interaction card is not a confirmed incompatibility.
+
+**Recorded local verification:** 98 strict Python/SDK tests and 45 editor tests
+passed. The packaged extension was installed and exercised in Cursor, including
+saved-source changes, Undo, and reanalysis. Actual sidebar source links were
+checked separately. See [verification details and remaining manual checks](docs/progress.md).
+These results measure engineering behavior, not defects prevented or developer
+adoption.
 
 ## Try the local alpha
 
@@ -64,11 +86,20 @@ unfinished release work.
    `compile_commands.json`. SDK headers, generated bindings, and required
    dependencies must already be available.
 5. Save your source and click **Analyze mod**. Open **Reviews** for findings,
-   **Hooks** for inventory, and **Coverage** for gaps.
+   **Hooks** for inventory, **Interactions** for prepared-catalog relationships, and
+   **Coverage** for gaps.
 
 For supported bounds findings, select **Preview fix**, inspect the diff, then
 **Apply reviewed fix**. Applying requires approval; source changes never happen
 silently. Build and test the intended gameplay behavior after any repair.
+
+The VSIX, native binary, dependency caches and prepared demo workspace are local
+build outputs; they are not included in a Git clone or published as a release.
+
+Interaction discovery currently requires a prepared local catalog. Use the
+[real-source hands-on workspace](docs/showcase.md#try-automatic-interaction-discovery)
+on this development Mac; public catalog distribution is unfinished. Missing catalog
+data leaves local source reviews available.
 
 No server, account, telemetry, or AI service is required. Warden does not launch
 Geometry Dash or install mods into your game.
@@ -101,6 +132,24 @@ developer demand, or time savings. Warden does not approve Index submissions.
 - [Real-mod research and candidate capabilities](docs/research/real-mod-product-review.md)
 - [Recorded SDK, compiler, and source revisions](docs/toolchain-lock.json)
 
+## Next milestone: install and test without a guide
+
+The current setup is too manual for public users. The next milestone is:
+
+1. **Simpler setup:** package the analyzer/runtime for supported platforms,
+   detect the Geode project and compiler settings, and provide catalog data
+   without manual folder selection. Build and validate Windows support.
+2. **A guided test the developer can run:** use real Geode code with a supported
+   defect, state the expected finding, review a change, rerun analysis, and
+   explain exactly what changed. Verify in-game behavior separately when a
+   concrete test procedure is ready.
+
+The target experience is **install Warden → open a Geode project → Analyze**,
+with actionable setup guidance when the project's SDK/build configuration is
+missing. This is a release goal, not a claim that setup is already automatic.
+Further feature expansion is deferred until installation and hands-on evaluation
+are understandable and repeatable.
+
 ## Where Warden is going
 
 The intended value is specific: **help a developer understand which mod
@@ -115,8 +164,8 @@ interactions need testing, why, and what the tests actually observed.**
 - Validate usefulness with independent modders and real tasks, across multiple
   diagnostic families and interactions.
 
-These are product goals, not capabilities of the current alpha. A general coding
-assistant can already investigate local bugs; Warden needs to earn its place through
+The alpha has bounded source-relationship discovery; these broader goals remain
+unvalidated or unfinished. A general coding assistant can already investigate local bugs; Warden needs to earn its place through
 Geode-specific evidence and a repeatable compatibility workflow.
 
 ## Develop and verify
@@ -143,9 +192,10 @@ their absence cannot count as passing release evidence. CTest can use the same
 policy with `cmake -S . -B build -DWARDEN_STRICT_TESTS=ON`.
 
 [GitHub checks](.github/workflows/checks.yml) define editor boundary checks and
-a scoped native SDK 5.11.1 job. They do not run the full historical benchmark set,
-the interactive editor workflow, or gameplay tests; their configuration alone is
-not evidence that they have executed successfully.
+a scoped native SDK 5.11.1 job. The [first hosted run](https://github.com/moharirvivaan/warden/actions/runs/38663455168)
+passed on commit `9180aaa`: editor boundaries on Linux/macOS and 60 SDK-backed
+contracts on macOS ARM64. This workflow does not run the full historical benchmark
+set, the interactive editor workflow, or gameplay tests.
 
 Expected inventory: `MenuLayer::init()` is a hook; `onMyButton()` is a helper.
 Preparation needs network access and leaves dependencies under ignored `.deps/`.

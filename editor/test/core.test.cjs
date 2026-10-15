@@ -56,3 +56,9 @@ test('an already cancelled request never attempts to launch the analyzer',async(
   const controller=new AbortController();controller.abort();
   await assert.rejects(core.spawnReport('/missing-analyzer',[],{signal:controller.signal}),/cancel/i);
 });
+test('optional hook facts are validated without breaking older schema-2 reports',()=>{
+  const r=report();r.hooks=[{target_class:'MenuLayer',method:'init',signature:'bool ()',location:{file:'main.cpp',line:1,column:1},behavior:{scope:'source_facts_only',forwarding_calls:[],priority_requests:[],unknown:[]}}];
+  assert.equal(core.parseReport(JSON.stringify(r),0).hooks.length,1);
+  r.hooks[0].behavior.forwarding_calls=[{context:'always_safe',location:{file:'main.cpp',line:1,column:1}}];
+  assert.throws(()=>core.parseReport(JSON.stringify(r),0),/behavior/i);
+});

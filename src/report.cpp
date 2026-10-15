@@ -9,10 +9,24 @@ static llvm::json::Object location(const Location& l) {
 }
 static llvm::json::Array methods(const std::vector<Method>& entries) {
     llvm::json::Array result;
-    for (const auto& m : entries) result.push_back(llvm::json::Object{
-        {"modified_class", m.modifiedClass}, {"target_class", m.targetClass},
-        {"method", m.name}, {"signature", m.signature}, {"location", location(m.location)},
-        {"evidence", "observed"}, {"registration", m.registration}});
+    for (const auto& m : entries) {
+        llvm::json::Object item{{"modified_class", m.modifiedClass}, {"target_class", m.targetClass},
+            {"method", m.name}, {"signature", m.signature}, {"location", location(m.location)},
+            {"evidence", "observed"}, {"registration", m.registration}};
+        if(m.behavior) {
+            llvm::json::Array calls,requests,unknown;
+            for(const auto& c:m.behavior->forwardingCalls)calls.push_back(llvm::json::Object{{"location",location(c.location)},{"context",c.context}});
+            for(const auto& p:m.behavior->priorityRequests) {
+                llvm::json::Object request{{"location",location(p.location)},{"hook",p.hookName},{"api",p.api},{"status",p.status},{"relative_mod",p.relativeMod}};
+                request["requested_value"]=p.requestedValue?llvm::json::Value(*p.requestedValue):llvm::json::Value(nullptr);
+                request["pre_order_value"]=p.preOrderValue?llvm::json::Value(*p.preOrderValue):llvm::json::Value(nullptr);
+                requests.push_back(std::move(request));
+            }
+            for(const auto& u:m.behavior->unknown)unknown.push_back(llvm::json::Object{{"location",location(u.location)},{"reason",u.reason}});
+            item["behavior"]=llvm::json::Object{{"scope","source_facts_only"},{"forwarding_calls",std::move(calls)},{"priority_requests",std::move(requests)},{"unknown",std::move(unknown)}};
+        }
+        result.push_back(std::move(item));
+    }
     return result;
 }
 llvm::json::Object toJson(const Report& r) {
@@ -69,9 +83,14 @@ std::string toText(const Report& r) {
     for (const auto& m : r.modifications)
         out << "MODIFY " << m.name << " -> " << m.targetClass << " (" << m.form << ")\n";
     auto printMethods = [&](const auto& entries, const char* label) {
-        for (const auto& m : entries) out << label << " " << m.targetClass << "::" << m.name
-            << " " << m.signature << " at " << m.location.file << ":" << m.location.line
-            << ":" << m.location.column << "\n";
+        for (const auto& m : entries) {
+            out << label << " " << m.targetClass << "::" << m.name << " " << m.signature << " at " << m.location.file << ":" << m.location.line << ":" << m.location.column << "\n";
+            if(m.behavior) {
+                for(const auto& c:m.behavior->forwardingCalls)out << "  Forwarding source call (" << c.context << ") at " << c.location.file << ":" << c.location.line << "\n";
+                for(const auto& p:m.behavior->priorityRequests)out << "  Priority request " << p.api << " " << (p.requestedValue?std::to_string(*p.requestedValue):p.relativeMod) << " (" << p.status << ") at " << p.location.file << ":" << p.location.line << "; runtime order unverified\n";
+                for(const auto& u:m.behavior->unknown)out << "  Behavior unknown: " << u.reason << "\n";
+            }
+        }
     };
     printMethods(r.hooks, "HOOK"); printMethods(r.helpers, "HELPER");
     for (const auto& f : r.findings) {

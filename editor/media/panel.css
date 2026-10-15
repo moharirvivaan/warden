@@ -117,3 +117,9 @@ body.vscode-high-contrast .badge, body.vscode-high-contrast-light .badge { color
   .card-heading { flex-wrap: wrap; }
   nav { gap: 5px; } nav button { font-size: 10px; }
 }
+
+/* Dense source facts stay readable inside the native sidebar. */
+.interaction-observation { border-left: 3px solid var(--vscode-focusBorder, #56d7ff); padding-left: 10px; margin: 14px 0; }
+nav { flex-wrap: wrap; }
+.card summary { cursor: pointer; overflow-wrap: anywhere; }
+.card .link { margin: 3px 8px 3px 0; }

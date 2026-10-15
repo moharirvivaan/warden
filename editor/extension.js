@@ -4,20 +4,128 @@ const path=require('node:path');
 const fs=require('node:fs/promises');
 const crypto=require('node:crypto');
 const {panelHtml}=require('./webview');
+const {loadCatalog,discoverInteractions,catalogSourceUrl}=require('./catalog');
+const {compareReports}=require('./interactions');
+const {captureSourceState}=require('./source-state');
 const {spawnReport,resolveSource,prepareRepair,contained}=require('./core');
 
 function activate(context){
   const output=vscode.window.createOutputChannel('Warden');
   let panel,project,build,report,controller,epoch=0,saveTimer,stale=false;
+  let catalog,discovery={status:'unavailable',reason:'Analyze your project to load the interaction catalog.'},catalogEpoch=0,catalogLoading=false,sourceFingerprint,scanFingerprint,peer;
+  let sourceWatchers=[],catalogWatchers=[],peerWatchers=[];
+  const disposeAll=items=>{for(const item of items)item.dispose?.();};
+  const catalogDirectory=()=>config().get('catalogPath')||path.join(context.extensionPath,'..','build','interaction-catalog');
   const previews=new Map();
   const virtual=new Map();
   const viewWaiters=new Set();
   const config=()=>vscode.workspace.getConfiguration('warden');
   const provider=vscode.workspace.registerTextDocumentContentProvider('warden-preview',{provideTextDocumentContent:uri=>virtual.get(uri.toString())||''});
-  const send=()=>panel?.webview.postMessage({type:'state',project,build,report,stale,running:!!controller,error:null});
+  const send=()=>panel?.webview.postMessage({type:'state',project,build,report,stale,running:!!controller,error:null,discovery,catalogLoading,generation:epoch,catalogGeneration:catalogEpoch,peer:peer?{report:peer.report,comparison:peer.comparison,error:peer.error,stale:peer.stale}:null,catalogEntries:catalog?.entries.map(e=>({id:e.id,mod:e.report.mod,revision:e.revision,scope:e.scope,adaptations:e.adaptations,license_status:e.license_status}))||[]});
   const notice=error=>panel?.webview.postMessage({type:'error',message:error.message||String(error)});
-  function cancel(){epoch++;controller?.abort();controller=undefined;send();}
-  function invalidate(){cancel();stale=true;previews.clear();send();}
+  function clearPeer(){disposeAll(peerWatchers);peerWatchers=[];peer=undefined;}
+  function cancel(){epoch++;controller?.abort();controller=undefined;catalogLoading=false;send();}
+  function invalidatePeer(){if(peer){peer.stale=true;peer.error='Peer source changed. Compare again.';}if(controller)cancel();send();}
+  function invalidate(){cancel();stale=true;discovery={status:'unavailable',reason:'Source changed. Analyze again for current interactions.'};if(peer)peer.stale=true;previews.clear();send();}
+  function watch(pattern,onChange){
+    if(!vscode.workspace.createFileSystemWatcher||!vscode.RelativePattern)return [];
+    const watcher=vscode.workspace.createFileSystemWatcher(pattern);watcher.onDidChange(onChange);watcher.onDidCreate(onChange);watcher.onDidDelete(onChange);return [watcher];
+  }
+  async function checkSavedSource(){
+    const run=epoch,root=project,settings=build;if(!root||!settings)return;
+    try{
+      const saved=await captureSourceState(root,settings);
+      if(run!==epoch||root!==project||settings!==build)return;
+      const expected=controller?scanFingerprint:sourceFingerprint;
+      if(!expected||saved!==expected)invalidate();
+    }catch(error){if(run===epoch&&root===project&&settings===build){invalidate();output.appendLine('Source freshness: '+error.message);}}
+  }
+  function watchSource(){
+    disposeAll(sourceWatchers);sourceWatchers=[];
+    if(!project||!build||!vscode.RelativePattern)return;
+    const changed=uri=>{const relative=path.relative(project,uri.fsPath);if(relative.split(path.sep).some(c=>['.git','.deps','.cache','build'].includes(c))||contained(build,uri.fsPath))return;if(relative==='mod.json'||/\.(cpp|cc|cxx|h|hpp|hh|hxx)$/.test(relative))return checkSavedSource();};
+    sourceWatchers.push(...watch(new vscode.RelativePattern(project,'**/*'),changed));
+    sourceWatchers.push(...watch(new vscode.RelativePattern(build,'compile_commands.json'),checkSavedSource));
+  }
+  function watchCatalog(){
+    disposeAll(catalogWatchers);catalogWatchers=[];
+    if(!vscode.RelativePattern)return;
+    catalogWatchers=watch(new vscode.RelativePattern(catalogDirectory(),'*.json'),()=>{catalogEpoch++;catalogLoading=false;discovery={status:'unavailable',reason:'Catalog changed. Analyze again to use the new snapshot.'};send();});
+  }
+  async function refreshDiscovery(run=epoch){
+    const version=catalogEpoch;catalogLoading=true;discovery={status:'unavailable',reason:'Loading the current catalog snapshot…'};send();
+    try{const selected=await loadCatalog(catalogDirectory());if(run!==epoch||version!==catalogEpoch)return;catalog=selected;discovery=discoverInteractions(report,selected);}
+    catch(error){if(run!==epoch||version!==catalogEpoch)return;catalog=undefined;discovery={status:'unavailable',reason:'Interaction catalog unavailable: '+error.message};output.appendLine(discovery.reason);}
+    finally{if(run===epoch&&version===catalogEpoch){catalogLoading=false;send();}}
+  }
+  async function chooseCatalog(){
+    const uris=await vscode.window.showOpenDialog({title:'Choose the prepared Warden catalog folder',canSelectFolders:true,canSelectFiles:false,canSelectMany:false});if(!uris?.[0])return;
+    await config().update('catalogPath',uris[0].fsPath,vscode.ConfigurationTarget.Workspace);
+  }
+  function interactionLocation(report,source){
+    if(!source||!Number.isInteger(source.hook)||source.hook<0||!Number.isInteger(source.index)||source.index<0)return;
+    const h=report.hooks[source.hook];if(!h)return;
+    if(source.kind==='declaration')return h.location;
+    const fields={forwarding:'forwarding_calls',priority:'priority_requests',unknown:'unknown'};
+    return h.behavior?.[fields[source.kind]]?.[source.index]?.location;
+  }
+  async function openPeerSource(message){
+    current();const run=epoch,selected=peer;
+    if(!selected?.report||selected.stale||message.generation!==run)throw new Error('Manual comparison is stale. Compare again.');
+    for(const key of ['relationship','observation','source'])if(!Number.isInteger(message[key])||message[key]<0)throw new Error('Invalid manual source selection.');
+    const source=selected.comparison.relationships[message.relationship]?.observations[message.observation]?.sources[message.source];
+    if(!source||!['primary','peer'].includes(source.side))throw new Error('Invalid manual source.');
+    if(sourceFingerprint!==await captureSourceState(project,build)||selected.fingerprint!==await captureSourceState(selected.root,selected.build))throw new Error('Source changed. Analyze and compare again.');
+    if(run!==epoch||peer!==selected||selected.stale)throw new Error('Comparison changed.');
+    if(source.side==='primary')return openLocation(interactionLocation(report,source));
+    const resolved=await resolveSource(selected.root,interactionLocation(selected.report,source));
+    const doc=await vscode.workspace.openTextDocument(vscode.Uri.file(resolved.file));
+    if(run!==epoch||peer!==selected||selected.stale||doc.isDirty)throw new Error('Peer source changed. Compare again.');
+    const pos=new vscode.Position(resolved.line,resolved.column);
+    await vscode.window.showTextDocument(doc,{viewColumn:vscode.ViewColumn.One,selection:new vscode.Range(pos,pos)});panel?.show(true);
+  }
+  async function openInteraction(message){
+    current();const run=epoch,version=catalogEpoch;
+    if(message.generation!==run||message.catalogGeneration!==version)throw new Error('Interaction selection is stale. Analyze again.');
+    const candidate=discovery.candidates?.find(c=>c.entryId===message.entryId);
+    if(!candidate||!Number.isInteger(message.relationship)||message.relationship<0||!Number.isInteger(message.observation)||message.observation<0||!Number.isInteger(message.source)||message.source<0)throw new Error('Invalid interaction selection.');
+    const observation=candidate.comparison.relationships[message.relationship]?.observations[message.observation];
+    const source=observation?.sources[message.source];if(!source)throw new Error('Invalid interaction source.');
+    if(await captureSourceState(project,build)!==sourceFingerprint){invalidate();throw new Error('Saved source changed. Analyze again.');}
+    if(run!==epoch||version!==catalogEpoch)throw new Error('Interaction changed. Analyze again.');
+    if(source.side==='primary')return openLocation(interactionLocation(report,source));
+    if(source.side!=='peer')throw new Error('Invalid interaction side.');
+    const selected=await loadCatalog(catalogDirectory());
+    const entry=selected.entries.find(e=>e.id===candidate.entryId);
+    if(run!==epoch||version!==catalogEpoch||selected.id!==catalog?.id||!entry)throw new Error('Catalog evidence changed. Analyze again.');
+    const url=catalogSourceUrl(entry,interactionLocation(entry.report,source));
+    await vscode.env.openExternal(vscode.Uri.parse(url));
+  }
+  async function compareLocal(){
+    if(!vscode.workspace.isTrusted)throw new Error('Trust this workspace before analyzing another source project.');
+    current();clearPeer();send();const run=epoch;
+    const previousRoot=config().get('peerProjectPath');
+    const roots=previousRoot?[vscode.Uri.file(previousRoot)]:await vscode.window.showOpenDialog({title:'Advanced: choose another mod source folder',canSelectFolders:true,canSelectFiles:false,canSelectMany:false});if(!roots?.[0])return;
+    const root=await fs.realpath(roots[0].fsPath);if(root===project)throw new Error('Choose a different mod source root.');
+    const previousBuild=config().get('peerBuildPath');
+    const databases=previousBuild?[vscode.Uri.file(path.join(previousBuild,'compile_commands.json'))]:await vscode.window.showOpenDialog({title:'Choose the other mod compile_commands.json',canSelectFiles:true,canSelectMany:false,filters:{'Compiler settings':['json']}});if(!databases?.[0])return;
+    const peerBuild=await fs.realpath(path.dirname(databases[0].fsPath));
+    if(run!==epoch)return;
+    if(vscode.workspace.textDocuments.some(d=>d.isDirty&&contained(root,d.uri.fsPath)))throw new Error('Save the other mod before comparison.');
+    const before=await captureSourceState(root,peerBuild);if(run!==epoch)return;
+    await config().update('peerProjectPath',root,vscode.ConfigurationTarget.Workspace);await config().update('peerBuildPath',peerBuild,vscode.ConfigurationTarget.Workspace);if(run!==epoch)return;
+    controller=new AbortController();send();
+    try{
+      const result=await spawnReport(config().get('analyzerPath')||path.join(context.extensionPath,'..','build','warden'),['inspect',root,'-p',peerBuild,'--format','json'],{signal:controller.signal,timeoutMs:config().get('timeoutSeconds',600)*1000});
+      if(run!==epoch)return;
+      if(await fs.realpath(result.report.project_root)!==root||before!==await captureSourceState(root,peerBuild)||sourceFingerprint!==await captureSourceState(project,build))throw new Error('Source changed during manual comparison. Analyze again.');
+      if(run!==epoch)return;
+      if(vscode.workspace.textDocuments.some(d=>d.isDirty&&contained(root,d.uri.fsPath)))throw new Error('Peer source has unsaved changes. Save and compare again.');
+      peer={root,build:peerBuild,fingerprint:before,report:result.report,comparison:compareReports(report,result.report),stale:false};
+      if(vscode.RelativePattern){const selected=peer;const changed=()=>{if(peer===selected&&run===epoch)invalidatePeer();};peerWatchers.push(...watch(new vscode.RelativePattern(root,'**/*'),changed),...watch(new vscode.RelativePattern(peerBuild,'compile_commands.json'),changed));}
+    }catch(error){if(run===epoch)peer={error:error.message};}
+    finally{if(run===epoch){controller=undefined;send();}}
+  }
   async function createPanel(){
     // The focus command returns before VS Code resolves a fresh webview view.
     let timer,resolveView;
@@ -43,6 +151,11 @@ function activate(context){
           case 'choose':await chooseProject(true);break;
           case 'configure':await chooseBuild(true);break;
           case 'analyzer':await chooseAnalyzer();break;
+          case 'catalog':await chooseCatalog();break;
+          case 'interactionSource':await openInteraction(message);break;
+          case 'peerSource':await openPeerSource(message);break;
+          case 'compare':await compareLocal();break;
+          case 'removePeer':cancel();clearPeer();await config().update('peerProjectPath',undefined,vscode.ConfigurationTarget.Workspace);await config().update('peerBuildPath',undefined,vscode.ConfigurationTarget.Workspace);send();break;
           case 'analyze':await analyze();break;
           case 'cancel':cancel();break;
           case 'autosave':if(typeof message.enabled==='boolean')await config().update('analyzeOnSave',message.enabled,vscode.ConfigurationTarget.Workspace);break;
@@ -78,7 +191,7 @@ function activate(context){
     if(!selected)return false;
     selected=await fs.realpath(selected);
     if(!await exists(path.join(selected,'compile_commands.json')))throw new Error('This folder has no compile_commands.json. Configure the mod build with CMAKE_EXPORT_COMPILE_COMMANDS=ON, then choose its compiler settings.');
-    invalidate();build=selected;report=undefined;stale=false;send();return true;
+    invalidate();build=selected;report=undefined;stale=false;watchSource();watchCatalog();send();return true;
   }
   async function chooseAnalyzer(){
     const uris=await vscode.window.showOpenDialog({title:'Select the compiled warden analyzer executable',canSelectFiles:true,canSelectFolders:false,canSelectMany:false});
@@ -96,14 +209,18 @@ function activate(context){
     if(vscode.workspace.textDocuments.some(d=>d.isDirty&&contained(project,d.uri.fsPath)))throw new Error('Save your mod changes before analysis. Warden reads files on disk.');
     const executable=config().get('analyzerPath')||path.join(context.extensionPath,'..','build','warden');
     if(!await exists(executable))throw new Error('Configure analyzer: select your compiled warden executable under Project setup. This extension requires the native analyzer and LLVM 21.');
-    cancel();const run=epoch;controller=new AbortController();stale=true;previews.clear();send();
+    cancel();clearPeer();scanFingerprint=undefined;const run=epoch;controller=new AbortController();stale=true;previews.clear();send();
     output.appendLine(`Analyzing ${project}\nCompiler settings: ${build}`);
     try{
+      const before=await captureSourceState(project,build);if(run!==epoch)return;scanFingerprint=before;
       const result=await spawnReport(executable,['inspect',project,'-p',build,'--format','json'],{signal:controller.signal,timeoutMs:config().get('timeoutSeconds',600)*1000});
       if(run!==epoch)return;
       const reportRoot=await fs.realpath(result.report.project_root);
+      const after=await captureSourceState(project,build);
       if(run!==epoch)return;
       if(reportRoot!==project)throw new Error('Analyzer returned a report for a different project.');
+      if(before!==after)throw new Error('Saved source changed during analysis. Analyze again.');
+      sourceFingerprint=after;
       output.appendLine(result.stderr);report=result.report;stale=false;controller=undefined;
       // Open real source on the first scan. The sidebar remains independent
       // of Cursor's code and Agents editor groups.
@@ -114,7 +231,7 @@ function activate(context){
         try{await openLocation(initial);}catch(error){output.appendLine('Source preview: '+error.message);}
       }
       if(run!==epoch)return;
-      panel?.show(true);send();return report;
+      panel?.show(true);send();await refreshDiscovery(run);return report;
     }catch(error){if(run===epoch){controller=undefined;notice(error);send();output.appendLine(error.detail||error.stack||String(error));}throw error;}
   }
   function current(){if(!report||stale||controller)throw new Error('Analyze saved source again before using this result.');}
@@ -180,10 +297,12 @@ function activate(context){
     vscode.commands.registerCommand('warden.open',async()=>{await createPanel();try{if(!project)await chooseProject(false);send();}catch(error){notice(error);output.appendLine(error.stack||String(error));}}),
     vscode.commands.registerCommand('warden.analyze',analyze),
     vscode.commands.registerCommand('warden.cancel',cancel),
-    vscode.workspace.onDidChangeTextDocument(e=>{if(project&&e.contentChanges.length&&contained(project,e.document.uri.fsPath))invalidate();}),
-    vscode.workspace.onDidSaveTextDocument(doc=>{if(project&&contained(project,doc.uri.fsPath)){invalidate();if(config().get('analyzeOnSave')&&/\.(cpp|cc|cxx|h|hpp)$/.test(doc.uri.fsPath)){clearTimeout(saveTimer);saveTimer=setTimeout(()=>analyze().catch(notice),700);}}}),
-    vscode.workspace.onDidChangeConfiguration(e=>{if(e.affectsConfiguration('warden')){invalidate();if(e.affectsConfiguration('warden.projectPath')||e.affectsConfiguration('warden.buildPath')){project=undefined;build=undefined;report=undefined;send();}panel?.webview.postMessage({type:'settings',autosave:config().get('analyzeOnSave')});}}),
-    {dispose(){clearTimeout(saveTimer);cancel();previews.clear();virtual.clear();}}
+    vscode.commands.registerCommand('warden.compare',compareLocal),
+    vscode.commands.registerCommand('warden.interactions',async()=>{await createPanel();panel?.webview.postMessage({type:'tab',tab:'interactions'});return discovery;}),
+    vscode.workspace.onDidChangeTextDocument(e=>{if(!e.contentChanges.length)return;if(project&&contained(project,e.document.uri.fsPath))invalidate();else if(peer?.root&&contained(peer.root,e.document.uri.fsPath))invalidatePeer();}),
+    vscode.workspace.onDidSaveTextDocument(doc=>{if(peer?.root&&contained(peer.root,doc.uri.fsPath))invalidatePeer();if(project&&contained(project,doc.uri.fsPath)){invalidate();if(config().get('analyzeOnSave')&&/\.(cpp|cc|cxx|h|hpp)$/.test(doc.uri.fsPath)){clearTimeout(saveTimer);saveTimer=setTimeout(()=>analyze().catch(notice),700);}}}),
+    vscode.workspace.onDidChangeConfiguration(e=>{if(e.affectsConfiguration('warden')){if(['peerProjectPath','peerBuildPath'].some(k=>e.affectsConfiguration('warden.'+k))&&!['projectPath','buildPath','analyzerPath','catalogPath'].some(k=>e.affectsConfiguration('warden.'+k))){if(peer?.root&&(config().get('peerProjectPath')!==peer.root||config().get('peerBuildPath')!==peer.build))invalidatePeer();return;}if(e.affectsConfiguration('warden.catalogPath')&&!['projectPath','buildPath','analyzerPath'].some(k=>e.affectsConfiguration('warden.'+k))){catalogEpoch++;watchCatalog();if(report&&!stale)refreshDiscovery().catch(notice);return;}invalidate();if(e.affectsConfiguration('warden.projectPath')||e.affectsConfiguration('warden.buildPath')){project=undefined;build=undefined;report=undefined;send();}panel?.webview.postMessage({type:'settings',autosave:config().get('analyzeOnSave')});}}),
+    {dispose(){clearTimeout(saveTimer);cancel();disposeAll(sourceWatchers);disposeAll(catalogWatchers);clearPeer();previews.clear();virtual.clear();}}
   );
 }
 module.exports={activate};

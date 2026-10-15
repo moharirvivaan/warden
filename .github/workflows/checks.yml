@@ -71,6 +71,7 @@ jobs:
               'test_analyzer.AnalyzerTests',
               'test_ownership.OwnershipTests',
               'test_array_bounds.ArrayBoundsTests',
+              'test_hook_behavior.HookBehaviorTests',
           ])
           summary = run_suite(suite, strict=True)
           print('SDK contract gate:', summary['status'])

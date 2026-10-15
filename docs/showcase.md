@@ -39,6 +39,61 @@ Do not instruct reviewers to run arbitrary project setup scripts automatically.
 They should inspect the source/build configuration they choose to trust. Warden
 requires editor workspace trust before executing its native analyzer.
 
+## Try automatic interaction discovery
+
+This is the new one-project workflow. It demonstrates source investigation using
+three pinned real mods, not automatic detection of a confirmed incompatibility.
+
+On this prepared development Mac:
+
+Verified locally: 98 strict Python/SDK contracts and 45 editor tests pass. The
+installed Cursor host checks discovery plus saved-source edit/Undo/reanalysis;
+actual sidebar cards and both source-link actions were also observed. These are
+engineering/source-workflow results, not game compatibility evidence.
+
+1. Install the freshly packaged `build/warden-geode-0.1.0.vsix` using
+   **Extensions: Install from VSIX…**, then reload the editor window.
+2. Open `build/Try-Warden-Interactions.code-workspace`. It points to the isolated
+   BetterInfo source copy, real SDK 5.10.1 compiler settings, native analyzer and
+   local catalog. You do not need F5 or another source project selection.
+3. Run **Warden: Analyze Mod**, then select **Interactions**.
+4. Expect NodeIDs and Server API relationship cards, two catalog entries checked
+   and one self entry excluded. NodeIDs has shared `LevelInfoLayer::init` and
+   `updateLabelValues` targets. Server API appears because BetterInfo declares it
+   as optional; the selected source units do not share layer hooks.
+5. Expand a NodeIDs target. **Open your source** opens the local BetterInfo file;
+   **Open pinned mod source** opens the exact NodeIDs GitHub revision in a browser.
+   Inspect direct-call placement and the observed priority request. Warden does
+   not infer that UI IDs are supplied solely from these hook/metadata facts.
+6. Read configuration and coverage. Only selected units were analyzed; other
+   source, versions, runtime conditions and platforms remain unknown. NodeIDs'
+   declared SDK differs from the selected SDK. A bare dependency version is a
+   minimum in Geode; differing literals remain unresolved without a range solver.
+7. Add a comment to the isolated BetterInfo source, save, and confirm results
+   become stale. Undo, save and Analyze again. This changes only the disposable
+   source copy. To inspect behavior with real dependencies in the game, prepare
+   and approve a separate concrete runtime procedure first.
+
+Record whether the tool located relevant code faster than your usual workflow,
+which explanation helped, and which card was irrelevant or confusing. Do not
+record a crash prevented or compatibility passed when no game test ran.
+
+Preparation for developers maintaining this checkout:
+
+```bash
+python3 scripts/prepare-interactions.py
+python3 -m unittest discover -s tests -p test_interaction_catalog.py -v
+```
+
+This script requires the pinned source caches and genuine SDK 5.10.1 BetterInfo
+compiler configuration already present. It fails with the missing input rather
+than downloading/building arbitrary projects. Original C++ is preserved. A
+selected-unit compiler adapter expands the real CMake PCH's SDK umbrella headers
+textually; it does not reproduce the historical/full-project build. Private local
+compiler settings and full reports remain in ignored build outputs. Catalog
+reports link pinned public source and retain unreviewed license status; public
+catalog redistribution has not been approved or validated.
+
 ## Showcase 1: an author's real source repair
 
 Purpose: demonstrate a useful source review from a real Geode mod.

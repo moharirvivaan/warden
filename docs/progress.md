@@ -315,3 +315,171 @@ diff opens from the native sidebar; historical source bytes remain unchanged.
   candidate. Its coordinated API/priority changes and historical SDK coverage
   requirements are recorded in the research document. Cross-mod analysis is
   still not implemented; no runtime crash, adoption, or time-saving claim follows.
+
+### Hosted CI verification — October 14, 2026
+
+Verified the push-triggered [GitHub run](https://github.com/moharirvivaan/warden/actions/runs/38663455168)
+for commit `9180aaa14d7dcd16ad4b8824e2e4a004e9fc76bc`. All three jobs completed
+successfully: editor boundaries on ubuntu-24.04 and macos-15, and native SDK
+5.11.1 contracts on macOS ARM64. Native logs confirm real SDK/example preparation,
+an analyzer build, and 60 tests passing in 544.717 seconds with the strict gate
+passing. This supersedes the earlier note that hosted execution was unverified.
+The workflow does not exercise historical source caches, actual editor UI/gameplay,
+or native Windows support. No product code changed during this verification.
+
+
+### Automatic discovery product correction — October 14, 2026
+
+- The user identified that selecting a suspected peer still makes developers
+  guess which mod matters. Automatic discovery is now the default proposed flow;
+  pair comparison is its internal engine and advanced investigation view.
+- Revised docs/product-scope.md around one-project analysis against a bounded,
+  versioned real-report catalog, transparent candidate reasons, pinned sources,
+  explicit coverage, and human-led verification. The existing Guided presentation
+  remains preferred.
+- Marked the pair implementation plan as a foundation draft requiring catalog
+  tasks and one-project acceptance. The revised written specification awaits
+  review. No cross-mod implementation or tests were added in this docs-only change.
+
+
+### Automatic discovery implementation plan — October 14, 2026
+
+- The user approved the revised written specification. Expanded the existing
+  interaction plan into six tasks: compiler facts, pair analysis, catalog loading
+  and retrieval, real input preparation, sidebar integration, and installed/user
+  evaluation. The plan awaits review and execution-method selection.
+- Default acceptance requires one real source project to surface a relevant
+  catalog entry without choosing a peer. Manual comparison remains advanced.
+- Planned three pinned real catalog inputs: NodeIDs, BetterInfo and Server API.
+  Their common SDK preparation and useful extraction are not verified yet.
+  Server API's different selected hook family is a coverage control; its optional
+  dependency relationship to BetterInfo means it is not globally unrelated.
+- Spec/plan self-review and documentation whitespace/link checks only. No new
+  product implementation, SDK run, editor test, commit, push or game action.
+
+
+### Automatic discovery execution — October 14, 2026
+
+- User requested immediate implementation; proceeding inline without further
+  routine approval prompts. Local feature branch preserves current uncommitted
+  docs and existing real SDK/PCH caches. No commit/push/game changes authorized.
+- Ruling: work in this checkout on a feature branch rather than move the user's
+  editor setup/caches to another worktree; preserves reproducible absolute PCH
+  paths and visible local progress. Changes remain uncommitted for review.
+- Preflight interfaces: native optional behavior -> strict report boundary ->
+  pair adapter -> catalog discovery -> sidebar. Catalog failures must not erase
+  primary reviews. Catalog URLs never use local-source resolution.
+- Task 1: in progress; first real-SDK behavior contracts are being added.
+
+- Task 1: seven behavior contracts implemented; nested conditional priority
+  regression was observed RED and corrected to preserve outer branch context.
+- Tasks 2–3: pure comparison, catalog validation and discovery tests pass; shared
+  targets produce information and source-specific guidance, never a crash verdict.
+- Task 4: prepared three genuine pinned selected-source reports under SDK 5.10.1;
+  BetterInfo automatically retrieves NodeIDs shared layer hooks and optional Server
+  API metadata. Original C++ retained; no runtime test or historical build claim.
+- Ruling: selected-unit compiler settings adapt an existing genuine SDK 5.10.1
+  CMake database, expanding its actual SDK PCH headers textually rather than
+  sharing a PCH containing another mod's definitions. Full upstream CMake builds
+  are not reproduced; adaptations and complete local flags are recorded.
+- Ruling: preserve the existing generation/repair state rather than duplicate it
+  in another session-state module. Added independent catalog generation and a
+  source/configuration fingerprint; host-boundary tests cover real integration.
+- Task 5: sidebar integration and default discovery implemented; testing installed
+  behavior, navigation and user-repeated steps remains in progress.
+
+
+### Discovery review and editor evidence — October 15, 2026
+
+- Independent whole-change review identified five actionable issues: obsolete
+  peer watchers, removed in-flight comparisons reappearing, unsaved peer edits
+  not staling evidence, unavailable catalogs hiding manual results, and constraint
+  gaps being counted before version validation. Each received a failing regression
+  and then passed after the fix; all 41 editor tests pass.
+- Expanded actual-SDK behavior controls to dynamic/relative/conditional requests,
+  user-defined priority lookalikes, inactive source and ambiguous registered
+  overload names. The CCNode setPosition overload reproducer failed before a
+  correction that preserves the request but marks hook selection/order unknown.
+  All ten focused real-SDK behavior tests now pass.
+- Checked actual SDK VersionInfo parsing: a bare version is a minimum, not an
+  exact constraint. Unequal bare versions remain unknown without a range solver;
+  exact '=' constraints can report mismatches. Regression failed before the fix.
+- The VSIX packages successfully (14 files, about 30 KB) and installs in an
+  isolated Cursor profile. No third-party source/catalog or native toolchain is
+  bundled. Distribution still needs native analyzer/LLVM and catalog setup.
+- The installed package's actual Cursor 1.128.0 extension-host check passed:
+  BetterInfo default Analyze retrieves NodeIDs and optional Server API metadata
+  without peer selection, excludes itself, and source edit/Undo/reanalysis works.
+  Result: build/interaction-work/actual-host.json. Undo explicitly focuses the
+  source editor; the first harness attempt targeted the sidebar and failed.
+- Observed actual GD-themed sidebar rendering at narrow width. Clicked the local
+  source button and verified BetterInfo line 17, column 30. Clicked the peer button
+  and verified Chrome opened pinned NodeIDs revision fc9b3aa at line 245. Record:
+  build/interaction-work/ui-verification.json. This is source navigation, not a
+  runtime interaction test.
+- Manual light-theme rendering, advanced peer clicks and a new full repair-button
+  walkthrough remain unverified for this increment. Existing review/repair
+  boundary tests pass; do not describe them as current manual click evidence.
+- Final strict native suite is running after the overload correction. The earlier
+  full run passed 95 tests with zero skips in 368.891 seconds; that is not the
+  final post-correction result. No commit, push, game install or launch performed.
+
+
+### Final discovery verification — October 15, 2026
+
+- Final native build succeeds. The strict suite passes 98 Python/SDK tests in
+  399.155 seconds with zero skips, errors, failures or expected failures.
+  Machine-readable evidence: build/quality/native-tests.json.
+- All 44 editor tests pass, including the five independent review regressions,
+  remembered peer-setting invalidation, and delayed-save watcher handling.
+- A real installed-editor test caught a further race: delayed file notifications
+  could cancel immediate reanalysis after save/Undo. A failing host-boundary
+  regression reproduced it; the fix compares saved state with the active scan.
+  A second test confirms actual changed saved source still invalidates scans.
+  Source fingerprints include file state and content digests; transient filesystem
+  consistency and transitive SDK changes are not claimed fully solved.
+- Repackaged and reinstalled the final VSIX in an isolated Cursor profile. The
+  exact saved-source edit -> Undo -> immediate reanalysis procedure now passes
+  against the installed package. The installed host result records passed:true;
+  visual source-link clicks remain separately recorded in ui-verification.json.
+- The prepared user entrypoint is build/Try-Warden-Interactions.code-workspace;
+  install build/warden-geode-0.1.0.vsix, open that workspace, Analyze, Interactions.
+  docs/showcase.md gives expected cards, source links, scope/version gaps and
+  hands-on feedback steps. No F5 or second-project selection is required.
+- Changes remain uncommitted on codex/interaction-discovery. No push, publication,
+  game installation, game launch or compatibility verdict. Light-theme rendering,
+  manual advanced-peer clicks and a fresh complete repair-button walkthrough
+  remain explicitly unverified; current repair approval boundary tests pass.
+
+
+### Coverage wording correction — October 15, 2026
+
+- User reported that repeated "Needs human investigation" cards were confusing.
+  The prepared BetterInfo report has zero supported diagnostic findings and 139
+  inventory coverage entries: 86 uncompiled source files, 52 unseen headers and
+  one unsupported onModify form. These entries are not detected bugs.
+- Replaced per-entry investigation cards with one coverage summary and collapsed
+  groups; preserved file details/source links. The tab shows Limited/Complete
+  rather than a large count that resembles a defect total. Partial scan status
+  now directs users to Coverage in plain language.
+- New rendering regression failed before the fix; all 45 editor tests pass.
+  Repackaged the local VSIX. Native analyzer unchanged; no native rerun or new
+  runtime proof claimed. The UI's limitations no longer instruct the developer
+  to investigate every file outside a deliberately selected scan.
+
+
+### Save and GitHub handoff — October 15, 2026
+
+- User authorized saving, committing and pushing the current work, plus a README
+  update. README now explains bounded catalog discovery, grouped coverage limits,
+  recorded verification and the remaining manual installation requirements.
+- Next session is focused on simpler installation and a developer-run guided
+  defect/fix test. Further feature expansion is deferred until those are usable.
+- Pre-commit checks: native build has no pending work; 45 editor tests pass;
+  11 focused actual-SDK behavior/catalog integration tests pass in 37.913 seconds;
+  README local links and git diff --check pass. The complete 98-test strict
+  Python/SDK run is recorded above and was not repeated for documentation/UI-only
+  changes. No new game or runtime compatibility claim.
+- Generated VSIX, binaries, source caches and local workspace outputs remain
+  ignored. Source, regression tests, setup script and documentation are included
+  in this save. Marketplace/release publication is not part of this request.

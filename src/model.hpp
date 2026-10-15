@@ -10,14 +10,32 @@ namespace fs = std::filesystem;
 struct Location {
     std::string file;
     unsigned line = 0, column = 0;
+    bool operator==(const Location&) const = default;
 };
 struct Unknown {
     std::string reason;
     Location location;
+    bool operator==(const Unknown&) const = default;
+};
+struct ForwardingCall {
+    Location location; std::string context;
+    bool operator==(const ForwardingCall&) const = default;
+};
+struct PriorityRequest {
+    Location location; std::string hookName, api, status, relativeMod;
+    std::optional<int64_t> requestedValue, preOrderValue;
+    bool operator==(const PriorityRequest&) const = default;
+};
+struct HookBehavior {
+    std::vector<ForwardingCall> forwardingCalls;
+    std::vector<PriorityRequest> priorityRequests;
+    std::vector<Unknown> unknown;
+    bool operator==(const HookBehavior&) const = default;
 };
 struct Method {
     std::string modifiedClass, targetClass, name, signature, registration;
     Location location;
+    std::optional<HookBehavior> behavior;
 };
 struct Modification {
     std::string name, targetClass, form;
