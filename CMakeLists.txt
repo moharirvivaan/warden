@@ -15,8 +15,14 @@ target_compile_options(warden PRIVATE -Wall -Wextra -Wpedantic)
 include(CTest)
 if(BUILD_TESTING)
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  option(WARDEN_STRICT_TESTS "Fail the test gate on skipped or expected-failure evidence" OFF)
+  set(WARDEN_TEST_OPTIONS)
+  if(WARDEN_STRICT_TESTS)
+    list(APPEND WARDEN_TEST_OPTIONS --strict)
+  endif()
   set(WARDEN_EXAMPLE "${CMAKE_SOURCE_DIR}/.deps/example-mod" CACHE PATH "Real Geode example")
   add_test(NAME analyzer_contracts COMMAND ${CMAKE_COMMAND} -E env
     "WARDEN_BINARY=$<TARGET_FILE:warden>" "WARDEN_EXAMPLE=${WARDEN_EXAMPLE}"
-    ${Python3_EXECUTABLE} -m unittest discover -s ${CMAKE_SOURCE_DIR}/tests -v)
+    ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/run.py ${WARDEN_TEST_OPTIONS}
+    --report ${CMAKE_BINARY_DIR}/Testing/warden-results.json)
 endif()

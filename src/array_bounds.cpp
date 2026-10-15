@@ -145,7 +145,9 @@ void inspectArrayBounds(const CXXMemberCallExpr& call, ASTContext& context,
     auto unknown=[&](const std::string& why) {
         result.unknown.push_back({"Late array bounds check unknown: "+why,location(call.getExprLoc(),context,root)});
     };
-    if (guardEffects(late->getCond(),context,result)) {unknown("guard evaluation may mutate state or invoke unmodeled effects");return;}
+    if (guardEffects(late->getInit(),context,result) || guardEffects(late->getCond(),context,result)) {
+        unknown("guard evaluation may mutate state or invoke unmodeled effects");return;
+    }
     if (!isa<DeclStmt>(top)) {unknown("access is not a supported standalone local initializer");return;}
     if (!terminates(late->getThen()) || late->getElse()) {unknown("guard has conditional or non-terminating control flow");return;}
     if (statements[offset+1]!=late) {unknown("intervening statements may change the array or index");return;}
@@ -182,7 +184,9 @@ void inspectArrayBounds(const CXXMemberCallExpr& call, ASTContext& context,
     finding.location=location(call.getExprLoc(),context,root);
     finding.related={{"late_guard",location(check->getExprLoc(),context,root)}};
     // Only propose an insertion for a sole, direct initializer. Keep the original
-    // guard/null handling verbatim. The editor verifies the whole-file digest
+    // guard/null handling verbatim. An if-initializer may declare values used
+    // by its exit; never copy that exit ahead of its declaration scope.
+    // The editor verifies the whole-file digest
     // before preview AND application; no automatic source modification occurs here.
     auto declaration=dyn_cast<DeclStmt>(top);
     auto variable=declaration && declaration->isSingleDecl() ? dyn_cast<VarDecl>(declaration->getSingleDecl()) : nullptr;
@@ -190,7 +194,7 @@ void inspectArrayBounds(const CXXMemberCallExpr& call, ASTContext& context,
     auto start=top->getBeginLoc();
     auto exit=late->getThen();
     if (auto body=dyn_cast<CompoundStmt>(exit)) exit=*body->body_begin();
-    if (variable && !references(exit,variable) && variable->getInit() && variable->getInit()->IgnoreParenImpCasts()==&call &&
+    if (variable && !late->getInit() && !references(exit,variable) && variable->getInit() && variable->getInit()->IgnoreParenImpCasts()==&call &&
         !start.isMacroID() && !check->getBeginLoc().isMacroID() && !check->getEndLoc().isMacroID() &&
         !exit->getBeginLoc().isMacroID() && !exit->getEndLoc().isMacroID() &&
         sm.getFileID(start)==sm.getFileID(check->getBeginLoc()) && sm.getFileID(start)==sm.getFileID(exit->getBeginLoc())) {

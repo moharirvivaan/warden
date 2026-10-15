@@ -17,10 +17,13 @@ test('rejects malformed reports instead of showing an empty successful scan',()=
 });
 test('navigation rejects traversal, symlink escape and invalid positions',async t=>{
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'warden-path-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+  const outside=await fs.mkdtemp(path.join(os.tmpdir(),'warden-outside-'));t.after(()=>fs.rm(outside,{recursive:true,force:true}));
+  await fs.writeFile(path.join(outside,'out.cpp'),'outside source\n');
   await fs.writeFile(path.join(root,'main.cpp'),'one\ntwo\n');
-  await fs.symlink(os.tmpdir(),path.join(root,'escape'));
+  await fs.symlink(outside,path.join(root,'escape'),process.platform==='win32'?'junction':'dir');
   const good=await core.resolveSource(root,{file:'main.cpp',line:2,column:1});assert.equal(good.file,await fs.realpath(path.join(root,'main.cpp')));
-  for(const location of [{file:'../else.cpp',line:1,column:1},{file:'escape/out.cpp',line:1,column:1},{file:'main.cpp',line:0,column:1},{file:'main.cpp',line:20,column:1},{file:'main.cpp',line:1,column:99}])
+  await assert.rejects(core.resolveSource(root,{file:'escape/out.cpp',line:1,column:1}),/symlink escapes/);
+  for(const location of [{file:'../else.cpp',line:1,column:1},{file:'main.cpp',line:0,column:1},{file:'main.cpp',line:20,column:1},{file:'main.cpp',line:1,column:99}])
     await assert.rejects(core.resolveSource(root,location));
 });
 test('repair rejects stale files and converts byte offsets after unicode correctly',()=>{
@@ -45,4 +48,11 @@ test('cancellation and timeout stop a running analyzer',async t=>{
   const running=core.spawnReport(process.execPath,['-e','setInterval(()=>{},1000)'],{signal:controller.signal,timeoutMs:10000});
   setTimeout(()=>controller.abort(),30);await assert.rejects(running,/cancel/i);
   await assert.rejects(core.spawnReport(process.execPath,['-e','setInterval(()=>{},1000)'],{timeoutMs:30}),/timed out/i);
+});
+test('oversized analyzer output is rejected before becoming a report',async()=>{
+  await assert.rejects(core.spawnReport(process.execPath,['-e',"process.stdout.write('x'.repeat(4096));"],{maxBytes:128}),/size limit/);
+});
+test('an already cancelled request never attempts to launch the analyzer',async()=>{
+  const controller=new AbortController();controller.abort();
+  await assert.rejects(core.spawnReport('/missing-analyzer',[],{signal:controller.signal}),/cancel/i);
 });

@@ -88,3 +88,23 @@ test('first open waits for asynchronous native sidebar resolution',async()=>{
  const h=host({viewDelay:30});await h.commands.get('warden.open')();
  assert.equal(h.latestState().project,'/A');
 });
+
+test('cancelling repair approval never submits an edit',async()=>{
+ const h=host();await h.commands.get('warden.open')();await h.commands.get('warden.analyze')();
+ h.vscode.window.showWarningMessage=async()=>undefined;
+ await h.send({type:'preview',index:0});await h.send({type:'apply',index:0});
+ assert.equal(h.edits.length,0);
+});
+
+test('editing while repair approval is open invalidates that approval',async()=>{
+ const h=host();await h.commands.get('warden.open')();await h.commands.get('warden.analyze')();
+ await h.send({type:'preview',index:0});
+ const entered=deferred(),approval=deferred();
+ h.vscode.window.showWarningMessage=async()=>{entered.resolve();await approval.promise;return 'Apply reviewed repair';};
+ const applying=h.send({type:'apply',index:0});await entered.promise;
+ h.docs['/A'].version++;h.docs['/A'].isDirty=true;
+ h.callbacks.change({document:h.docs['/A'],contentChanges:[{text:'changed'}]});
+ approval.resolve();await applying;
+ assert.equal(h.edits.length,0);
+ assert.ok(h.messages.some(m=>m.type==='error'&&/Analyze|analyz|Save|changed/.test(m.message)));
+});

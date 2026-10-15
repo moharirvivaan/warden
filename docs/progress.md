@@ -276,3 +276,42 @@ real 5.10.1 selected-unit configuration produces one bounds review at line206,
 bounds reviews. The current native binary also emits a supported repair candidate
 for that historical source (older cached reports predated this support). Its real
 diff opens from the native sidebar; historical source bytes remain unchanged.
+
+### Stricter evidence and repair regressions — October 14, 2026
+
+- Added `tests/run.py`: normal development runs label optional skips; strict
+  mode rejects skips, expected failures, empty suites, and all-skipped runs.
+  JSON records individual missing-evidence reasons and failures. CTest uses the
+  runner, with opt-in `WARDEN_STRICT_TESTS` and a report under build/Testing.
+- Tested strict-gate behavior against an actual historical bounds benchmark with
+  an absent input directory. The benchmark skips and the strict gate fails;
+  missing caches cannot count as historical evidence.
+- Strengthened the bounds benchmark to verify pinned Git revisions and exact
+  selected source bytes before running the historical comparison.
+- New real-SDK regressions exposed two pre-existing repair defects. An effectful
+  `if` initializer could mutate the array before its late condition; Warden now
+  reports this as unknown with no finding/repair. A pure initializer could declare
+  an exit variable that a generated guard moved outside scope; Warden retains
+  the risk review but withholds repairs for late guards with an initializer.
+  Both regressions failed before their fixes and passed on the rebuilt analyzer.
+- Editor boundary tests now exercise a symlink to an existing outside file,
+  oversized process output, pre-cancelled requests, cancelled approval, and source
+  edits while approval is open. These are boundary tests, not a new interactive
+  Cursor UI or gameplay test run.
+- In disposable copies, accepting skipped evidence and removing canonical-path
+  containment each caused the appropriate tests to fail. The working source was
+  not mutated by these checks. This is focused mutation evidence, not exhaustive
+  mutation coverage or measured diagnostic precision.
+- Added a GitHub workflow for Linux/macOS editor boundaries and 60 selected real
+  SDK 5.11.1 contracts on macOS ARM64. Official action commits are pinned. YAML,
+  embedded Python, and test selection were checked locally; the hosted workflow
+  has not run. Historical bootstrap, actual editor-host/gameplay checks, portable
+  installation, and Windows native validation remain outside this workflow.
+- Final verification: build succeeds; strict CTest runs 87 Python/SDK tests in
+  275.55 seconds with zero skips/errors/failures/expected failures; all 19 editor
+  boundary tests pass. Independent review's initializer-scope finding was fixed;
+  its follow-up found no further actionable issue.
+- Rechecked the BetterEdit / Editor Tab API source repair as an interaction
+  candidate. Its coordinated API/priority changes and historical SDK coverage
+  requirements are recorded in the research document. Cross-mod analysis is
+  still not implemented; no runtime crash, adoption, or time-saving claim follows.

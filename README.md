@@ -131,6 +131,22 @@ ctest --test-dir build --output-on-failure
 node --test editor/test/*.test.cjs
 ```
 
+Before claiming the full prepared Python/SDK suite passed, run the strict gate:
+
+```bash
+python3 tests/run.py --strict --report build/quality/native-tests.json
+```
+
+Strict mode fails on skipped tests, expected failures, or no executed tests. It
+records missing-evidence reasons in JSON. Historical inputs must be prepared;
+their absence cannot count as passing release evidence. CTest can use the same
+policy with `cmake -S . -B build -DWARDEN_STRICT_TESTS=ON`.
+
+[GitHub checks](.github/workflows/checks.yml) define editor boundary checks and
+a scoped native SDK 5.11.1 job. They do not run the full historical benchmark set,
+the interactive editor workflow, or gameplay tests; their configuration alone is
+not evidence that they have executed successfully.
+
 Expected inventory: `MenuLayer::init()` is a hook; `onMyButton()` is a helper.
 Preparation needs network access and leaves dependencies under ignored `.deps/`.
 Some historical benchmarks need additional cached source/configurations; see the

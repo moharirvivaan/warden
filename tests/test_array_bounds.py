@@ -2,6 +2,7 @@
 import unittest
 import hashlib
 import json
+import subprocess
 import test_analyzer
 
 PREFIX = test_analyzer.PREFIX
@@ -11,6 +12,32 @@ class ArrayBoundsTests(unittest.TestCase):
     fixture = test_analyzer.AnalyzerTests.fixture
     scan = test_analyzer.AnalyzerTests.scan
     run_warden = test_analyzer.AnalyzerTests.run_warden
+
+    def test_if_initializer_effects_do_not_authorize_a_bounds_repair(self):
+        result, report = self.scan({"main.cpp": PREFIX + '''
+void changingArray(CCArray* data, unsigned i) {
+    auto object = data->objectAtIndex(i);
+    if (int marker = (data->removeLastObject(), 0); i >= data->count()) return;
+    (void)object;
+}
+'''})
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertEqual(report["findings"], [])
+        self.assertTrue(any("guard" in u["reason"] and "effect" in u["reason"]
+                            for u in report["unknown"]))
+
+    def test_exit_local_to_if_initializer_cannot_be_moved_before_its_declaration(self):
+        result, report = self.scan({"main.cpp": PREFIX + '''
+int scopedExit(CCArray* data, unsigned i) {
+    auto object = data->objectAtIndex(i);
+    if (int exitCode = 7; i >= data->count()) return exitCode;
+    return 0;
+}
+'''})
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(len(report["findings"]), 1)
+        self.assertNotIn("repair", report["findings"][0],
+                         "An initializer-local exit must not be inserted outside its scope")
 
     def test_bounds_check_after_access_produces_review(self):
         r, report = self.scan({"main.cpp": PREFIX + '''
@@ -213,6 +240,13 @@ class HistoricalBoundsTests(unittest.TestCase):
         builds=[roots[0]/"build/bounds-only",roots[1]/"build"]
         if any(not (b/"compile_commands.json").exists() for b in builds):
             self.skipTest("Historical SDK-backed source configurations are absent; no substituted headers.")
+        lock = json.loads((test_analyzer.ROOT / "docs/toolchain-lock.json").read_text())["benchmarks"]["betterinfo_bounds"]
+        source = "src/layers/_bases/BIViewLayer.cpp"
+        for root, revision in zip(roots, [lock["baseline_revision"], lock["repair_revision"]]):
+            head = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+            self.assertEqual(head, revision, "Historical snapshot must match the pinned revision")
+            pinned = subprocess.check_output(["git", "-C", str(root), "show", revision + ":" + source])
+            self.assertEqual((root / source).read_bytes(), pinned, "Historical source has local edits")
         before,after=[json.loads(self.run_warden("inspect",root,"-p",build,"--format","json").stdout) for root,build in zip(roots,builds)]
         for report in [before,after]:
             self.assertEqual(report["toolchain"]["sdk"],"5.10.1")

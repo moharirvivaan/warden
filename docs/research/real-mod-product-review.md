@@ -168,3 +168,20 @@ Preparation: scripts/prepare-ownership.py. Rule and benchmark contracts:
 tests/test_ownership.py. A missing real-source cache explicitly skips the benchmark,
 never substitutes a mock mod. These results establish one engineering capability,
 not the multiple-family, multi-project product readiness outcome.
+
+## Interaction candidate recheck — October 14, 2026
+
+The BetterEdit / Editor Tab API repair was fetched again from the author's
+[commit](https://github.com/HJfod/BetterEdit/commit/f0bd86f502f6e48a352fae138acf0d8dd17bfc41).
+It changes several coordinated mechanisms: dependency metadata, API-managed modes
+and tab callbacks, hook priorities, custom button-bar handling, and editor UI
+scaling. The metadata changes from Geode 5.0.0-beta.3 to 5.0.1 and replaces an
+Editor Tab API incompatibility with a 2.0.3 dependency.
+
+This remains a strong interaction research case, but it is not evidence that a
+single hook-order warning or automatic priority change would repair compatibility.
+An interaction report must distinguish source/metadata facts, API contracts,
+inferred risks, and observed behavior. The historical SDK is also outside the
+analyzer's currently validated 5.8.2/5.10.1/5.11.1 configurations; the case cannot
+be presented as an analyzer/runtime reproduction without preparing and validating
+its actual inputs. No automatic detector or runtime replay was added by this recheck.

@@ -21,6 +21,39 @@ cmake --build build
 
 Python 3 is used for setup and integration tests; the analyzer is a native C++ executable.
 
+## Test gates
+
+Fast checks, without SDK setup:
+
+```bash
+python3 -m unittest discover -s tests -p test_runner.py -v
+node --test editor/test/*.test.cjs
+```
+
+With all SDK and historical source inputs prepared:
+
+```bash
+python3 -m pip install -r tests/requirements.txt
+python3 tests/run.py --strict --report build/quality/native-tests.json
+```
+
+The JSON report separates failures, setup errors, skips with reasons, and expected
+failures. Strict mode rejects any skipped or expected-failure test; an empty or
+all-skipped run always fails. A successful Python gate does not establish editor
+host behavior, game behavior, cross-mod compatibility, or release readiness.
+
+CTest uses the same runner. Configure `-DWARDEN_STRICT_TESTS=ON` to require strict
+evidence; its JSON report is written under the build's `Testing/` directory.
+Development mode still permits optional historical inputs to be absent, but labels
+the result `passed_with_skips` rather than treating those tests as executed proof.
+
+The GitHub workflow prepares the official SDK 5.11.1 example and exercises the
+core extraction/ownership/bounds contracts. It also runs editor boundary tests on
+Linux and macOS. It does not bootstrap the historical SDK/PCH configurations, run
+the installed editor UI, or establish native Linux/Windows support. A fresh clone
+still needs the separately documented historical inputs for the full strict gate;
+one-command historical setup remains unfinished.
+
 ## Run the real Geode example
 
 ```bash
