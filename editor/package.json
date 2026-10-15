@@ -1,0 +1,99 @@
+{
+  "name": "warden-geode",
+  "displayName": "Warden for Geode",
+  "description": "Local, evidence-linked Geode preflight reviews inside your editor.",
+  "version": "0.1.0",
+  "publisher": "warden-local",
+  "private": true,
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": [
+    "Linters"
+  ],
+  "main": "./extension.js",
+  "scripts": {
+    "test": "node --test test/*.test.cjs"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "warden.open",
+        "title": "Warden: Open",
+        "icon": "$(shield)"
+      },
+      {
+        "command": "warden.analyze",
+        "title": "Warden: Analyze Mod"
+      },
+      {
+        "command": "warden.cancel",
+        "title": "Warden: Cancel Analysis"
+      }
+    ],
+    "configuration": {
+      "title": "Warden",
+      "properties": {
+        "warden.analyzerPath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to the native warden executable. Local development defaults to this checkout's build/warden."
+        },
+        "warden.projectPath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional absolute mod folder containing mod.json. Otherwise choose a workspace mod or browse."
+        },
+        "warden.buildPath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional absolute folder containing compile_commands.json. Otherwise discover build/ or browse."
+        },
+        "warden.analyzeOnSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "Reanalyze the selected mod after saved C++ source changes. Unsaved changes invalidate results."
+        },
+        "warden.timeoutSeconds": {
+          "type": "integer",
+          "default": 600,
+          "minimum": 10,
+          "maximum": 3600,
+          "description": "Maximum duration of a native analysis run."
+        }
+      }
+    },
+    "menus": {
+      "editor/title": [
+        {
+          "command": "warden.open",
+          "when": "resourceLangId == cpp",
+          "group": "navigation@10"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "warden",
+          "title": "Warden",
+          "icon": "media/activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "warden": [
+        {
+          "type": "webview",
+          "id": "warden.panel",
+          "name": "Geode Preflight"
+        }
+      ]
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/moharirvivaan/warden.git",
+    "directory": "editor"
+  }
+}

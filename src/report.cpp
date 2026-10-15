@@ -1,6 +1,7 @@
 #include "model.hpp"
 #include <clang/Basic/Version.h>
 #include <sstream>
+#include <algorithm>
 
 namespace warden {
 static llvm::json::Object location(const Location& l) {
@@ -15,29 +16,49 @@ static llvm::json::Array methods(const std::vector<Method>& entries) {
     return result;
 }
 llvm::json::Object toJson(const Report& r) {
-    llvm::json::Array files, mods, unknown;
+    llvm::json::Array files, mods, unknown, findings;
     for (const auto& f : r.files) {
         llvm::json::Array diagnostics, args;
         for (const auto& d : f.diagnostics) diagnostics.push_back(llvm::json::Object{
             {"severity", d.severity}, {"message", d.message}, {"location", location(d.location)}});
         for (const auto& a : f.arguments) args.push_back(a);
-        files.push_back(llvm::json::Object{{"file", f.file}, {"status", f.status},
-            {"diagnostics", std::move(diagnostics)}, {"arguments", std::move(args)}});
+        files.push_back(llvm::json::Object{{"file", f.file}, {"status", f.status}, {"kind", f.kind},
+            {"directory", f.directory}, {"diagnostics", std::move(diagnostics)}, {"arguments", std::move(args)}});
     }
     for (const auto& m : r.modifications) mods.push_back(llvm::json::Object{
         {"modified_class", m.name}, {"target_class", m.targetClass},
         {"form", m.form}, {"location", location(m.location)}});
     for (const auto& u : r.unknown) unknown.push_back(llvm::json::Object{
         {"reason", u.reason}, {"location", location(u.location)}, {"evidence", "unknown"}});
+    for (const auto& f : r.findings) {
+        llvm::json::Array related;
+        for (const auto& l : f.related) related.push_back(llvm::json::Object{
+            {"role", l.role}, {"location", location(l.location)}});
+        llvm::json::Object finding{{"rule", f.rule}, {"severity", f.severity},
+            {"evidence", f.evidence}, {"variable", f.variable}, {"message", f.message},
+            {"suggestion", f.suggestion}, {"limitations", f.limitations},
+            {"factory_contract", f.factoryContract}, {"location", location(f.location)},
+            {"related", std::move(related)}};
+        if (f.repair) finding["repair"] = llvm::json::Object{
+            {"file", f.repair->file}, {"sha256", f.repair->sha256},
+            {"start_byte", static_cast<int64_t>(f.repair->startByte)},
+            {"end_byte", static_cast<int64_t>(f.repair->endByte)},
+            {"expected", f.repair->expected}, {"replacement", f.repair->replacement}};
+        findings.push_back(std::move(finding));
+    }
     llvm::json::Object metadata;
     for (const auto& kv : r.mod) metadata[kv.first] = kv.second;
-    return llvm::json::Object{{"schema_version", 1}, {"status", r.status}, {"mod", std::move(metadata)},
+    return llvm::json::Object{{"schema_version", 2}, {"status", r.status}, {"mod", std::move(metadata)},
         {"project_root", r.root}, {"compilation_database", r.database},
         {"toolchain", llvm::json::Object{{"warden", "0.1.0"}, {"clang", CLANG_VERSION_STRING},
             {"sdk", r.sdkVersion}, {"sdk_root", r.sdkRoot}, {"target", r.target}}},
-        {"coverage", "Static hook declarations in the selected macOS ARM64 configuration; no runtime compatibility certification."},
+        {"coverage", "Static hook declarations, limited deferred Cocos ownership and late array-bounds reviews for Geode 5.8.2/5.10.1/5.11.1 macOS ARM64; no runtime compatibility certification."},
         {"files", std::move(files)}, {"modifications", std::move(mods)},
-        {"hooks", methods(r.hooks)}, {"helpers", methods(r.helpers)}, {"unknown", std::move(unknown)}};
+        {"hooks", methods(r.hooks)}, {"helpers", methods(r.helpers)}, {"unknown", std::move(unknown)},
+        {"findings", std::move(findings)}, {"ownership", llvm::json::Object{
+            {"queued_callbacks", static_cast<int64_t>(r.queuedCallbacks.size())},
+            {"retaining_captures", static_cast<int64_t>(r.retainingCaptures.size())},
+            {"scope", "Direct lambdas, explicit by-value captures, supported local factories; other ownership flows remain unknown."}}}};
 }
 std::string toText(const Report& r) {
     std::ostringstream out;
@@ -53,13 +74,29 @@ std::string toText(const Report& r) {
             << ":" << m.location.column << "\n";
     };
     printMethods(r.hooks, "HOOK"); printMethods(r.helpers, "HELPER");
+    for (const auto& f : r.findings) {
+        out << "Review [" << f.rule << "] " << f.variable << " at " << f.location.file
+            << ":" << f.location.line << ":" << f.location.column << "\n  " << f.message << "\n";
+        for (const auto& l : f.related)
+            out << "  " << l.role << ": " << l.location.file << ":" << l.location.line << ":" << l.location.column << "\n";
+        out << "  Suggestion: " << f.suggestion << "\n  Evidence: " << f.evidence
+            << " | Factory contract: " << f.factoryContract << "\n  " << f.limitations << "\n";
+    }
     for (const auto& f : r.files) {
         out << "FILE " << f.file << " — " << f.status << "\n";
+        if (!f.directory.empty()) out << "  Working directory: " << f.directory << "\n";
         for (const auto& d : f.diagnostics) out << "  " << d.severity << ": " << d.message
             << " at " << d.location.file << ":" << d.location.line << "\n";
     }
     for (const auto& u : r.unknown) out << "UNKNOWN " << u.reason << " at "
         << u.location.file << ":" << u.location.line << "\n";
+    out << "Ownership: " << r.queuedCallbacks.size() << " queued callbacks, "
+        << r.retainingCaptures.size() << " retaining captures, "
+        << std::count_if(r.findings.begin(),r.findings.end(),[](const Finding& f){return f.rule=="geode.deferred-cocos-ownership";})
+        << " ownership reviews; not a safety verdict.\n"
+        << "  Scope: direct lambdas, explicit by-value captures, supported local factories.\n";
+    out << std::count_if(r.findings.begin(),r.findings.end(),[](const Finding& f){return f.rule=="geode.late-array-bounds-check";})
+        << " bounds reviews; not general bounds proof.\n";
     out << r.hooks.size() << " hooks, " << r.helpers.size() << " helpers, "
         << r.unknown.size() << " unknown cases\n";
     return out.str();

@@ -93,17 +93,19 @@ Report inspect(const fs::path& rootPath, const fs::path& buildPath) {
     }
     if (commands.empty()) { setupError(report, "No project translation units in the compilation database."); return report; }
     bool sdkSetupError = false;
+    std::map<std::string, std::string> headers;
     for (auto& [path, variants] : commands) {
         FileResult file;
         file.file = fs::path(path).lexically_relative(root).generic_string();
-        std::set<std::vector<std::string>> distinct;
-        for (const auto& v : variants) distinct.insert(v.CommandLine);
+        std::set<std::pair<std::string, std::vector<std::string>>> distinct;
+        for (const auto& v : variants) distinct.emplace(normalized(v.Directory).string(), v.CommandLine);
         if (distinct.size() != 1) {
             file.status = "unknown";
             report.unknown.push_back({"Multiple compiler configurations for this file; select one configuration.", {file.file}});
             report.files.push_back(std::move(file)); continue;
         }
         file.arguments = variants.front().CommandLine;
+        file.directory = normalized(variants.front().Directory).string();
         Inventory unit;
         clang::tooling::ClangTool tool(*database, {path});
         tool.appendArgumentsAdjuster(clang::tooling::getInsertArgumentAdjuster(
@@ -112,12 +114,16 @@ Report inspect(const fs::path& rootPath, const fs::path& buildPath) {
         tool.setDiagnosticConsumer(&diagnostics);
         Factory factory(unit, root, build);
         int status = tool.run(&factory);
-        report.sdkVersion = unit.sdkVersion; report.sdkRoot = unit.sdkRoot; report.target = unit.target;
+        if (!unit.sdkVersion.empty()) { report.sdkVersion = unit.sdkVersion; report.sdkRoot = unit.sdkRoot; }
+        if (!unit.target.empty()) report.target = unit.target;
         if (status || diagnostics.errors) {
             file.status = "incomplete";
             report.unknown.push_back({"Compiler errors: inventory for this translation unit was discarded.", {file.file}});
             sdkSetupError |= diagnostics.missingSdk;
         } else {
+            report.findings.insert(report.findings.end(), unit.findings.begin(), unit.findings.end());
+            report.queuedCallbacks.insert(report.queuedCallbacks.end(), unit.queuedCallbacks.begin(), unit.queuedCallbacks.end());
+            report.retainingCaptures.insert(report.retainingCaptures.end(), unit.retainingCaptures.begin(), unit.retainingCaptures.end());
             report.hooks.insert(report.hooks.end(), unit.hooks.begin(), unit.hooks.end());
             report.helpers.insert(report.helpers.end(), unit.helpers.begin(), unit.helpers.end());
             report.modifications.insert(report.modifications.end(), unit.modifications.begin(), unit.modifications.end());
@@ -125,21 +131,39 @@ Report inspect(const fs::path& rootPath, const fs::path& buildPath) {
             if (!unit.unknown.empty()) file.status = "partial";
         }
         report.files.push_back(std::move(file));
+        for (const auto& header : unit.includedHeaders) {
+            auto headerStatus = status || diagnostics.errors ? "incomplete" : "complete";
+            auto [it, inserted] = headers.emplace(header, headerStatus);
+            if (!inserted && it->second != headerStatus) it->second = "partial";
+        }
     }
+    for (const auto& [header, status] : headers)
+        report.files.push_back({header, status, {}, {}, "included_header"});
+    if (auto declared = report.mod.getString("geode"); declared && !report.sdkVersion.empty() && declared->str() != report.sdkVersion)
+        report.unknown.push_back({"Declared Geode SDK " + declared->str() + " differs from analyzed SDK " +
+            report.sdkVersion + "; findings describe the selected SDK only. Declared-SDK compatibility is unverified.", {}});
     for (fs::recursive_directory_iterator it(root, fs::directory_options::skip_permission_denied), end; it != end; ++it) {
         if (it->is_directory() && !belongsToProject(it->path(), root, build)) { it.disable_recursion_pending(); continue; }
         const auto extension = it->path().extension().string();
-        if (it->is_regular_file() && (extension == ".cpp" || extension == ".cc" || extension == ".cxx") &&
-            belongsToProject(it->path(), root, build) && !commands.contains(normalized(it->path()).string())) {
+        bool isHeader = extension == ".h" || extension == ".hpp" || extension == ".hh" || extension == ".hxx";
+        bool isSource = extension == ".cpp" || extension == ".cc" || extension == ".cxx";
+        auto relative = it->path().lexically_relative(root).generic_string();
+        if (it->is_regular_file() && (isSource || isHeader) &&
+            belongsToProject(it->path(), root, build) && !commands.contains(normalized(it->path()).string()) && !headers.contains(relative)) {
             auto file = it->path().lexically_relative(root).generic_string();
-            report.files.push_back({file, "unknown", {}, {}});
-            report.unknown.push_back({"Source file has no command in the selected compilation database.", {file}});
+            report.files.push_back({file, "unknown", {}, {}, isHeader ? "unseen_header" : "uncompiled_source"});
+            report.unknown.push_back({isHeader ? "Header was not included by the selected translation units." :
+                "Source file has no command in the selected compilation database.", {file}});
         }
     }
     auto methodKey = [](const Method& m) { return std::tuple(m.location.file, m.location.line, m.location.column, m.targetClass, m.name, m.signature); };
     deduplicate(report.hooks, methodKey); deduplicate(report.helpers, methodKey);
     deduplicate(report.modifications, [](const Modification& m) { return std::tuple(m.location.file, m.location.line, m.location.column, m.name, m.targetClass); });
     deduplicate(report.unknown, [](const Unknown& u) { return std::tuple(u.location.file, u.location.line, u.location.column, u.reason); });
+    auto locationKey = [](const Location& l) { return std::tuple(l.file, l.line, l.column); };
+    deduplicate(report.queuedCallbacks, locationKey);
+    deduplicate(report.retainingCaptures, locationKey);
+    deduplicate(report.findings, [](const Finding& f) { return std::tuple(f.location.file, f.location.line, f.location.column, f.rule, f.variable); });
     if (sdkSetupError) setupError(report, "Required Geode SDK headers are missing; configure SDK include paths before analysis.");
     else if (!report.unknown.empty()) { report.status = "partial"; report.exitCode = 1; }
     return report;

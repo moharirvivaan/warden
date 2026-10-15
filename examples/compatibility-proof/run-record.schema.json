@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Warden controlled runtime observation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["run_id", "scenario", "package_hashes", "versions", "architecture", "operation_order", "outcome", "artifacts", "intended_behavior_observed", "human_review_status", "notes"],
+  "allOf": [
+    {
+      "if": {"properties": {"scenario": {"const": "baseline"}}},
+      "then": {"properties": {"package_hashes": {"maxProperties": 0}}}
+    },
+    {
+      "if": {"properties": {"scenario": {"const": "remover-alone"}}},
+      "then": {"properties": {"package_hashes": {"required": ["warden.proof-remover"], "maxProperties": 1}}}
+    },
+    {
+      "if": {"properties": {"scenario": {"const": "consumer-alone"}}},
+      "then": {"properties": {"package_hashes": {"required": ["warden.proof-consumer"], "maxProperties": 1}}}
+    },
+    {
+      "if": {"properties": {"scenario": {"const": "guarded-alone"}}},
+      "then": {"properties": {"package_hashes": {"required": ["warden.proof-consumer-guarded"], "maxProperties": 1}}}
+    },
+    {
+      "if": {"properties": {"scenario": {"enum": ["combined", "combined-repeat"]}}},
+      "then": {"properties": {"package_hashes": {"required": ["warden.proof-remover", "warden.proof-consumer"], "maxProperties": 2}}}
+    },
+    {
+      "if": {"properties": {"scenario": {"const": "combined-guarded"}}},
+      "then": {"properties": {"package_hashes": {"required": ["warden.proof-remover", "warden.proof-consumer-guarded"], "maxProperties": 2}}}
+    }
+  ],
+  "properties": {
+    "run_id": {"type": "string", "minLength": 1},
+    "scenario": {"enum": ["baseline", "remover-alone", "consumer-alone", "combined", "combined-repeat", "guarded-alone", "combined-guarded"]},
+    "package_hashes": {
+      "type": "object",
+      "propertyNames": {"enum": ["warden.proof-remover", "warden.proof-consumer", "warden.proof-consumer-guarded"]},
+      "additionalProperties": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+    },
+    "versions": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sdk", "loader", "game", "node_ids"],
+      "properties": {
+        "sdk": {"type": "string", "minLength": 1},
+        "loader": {"type": "string", "minLength": 1},
+        "game": {"type": "string", "minLength": 1},
+        "node_ids": {"type": "string", "minLength": 1}
+      }
+    },
+    "architecture": {"const": "arm64"},
+    "operation_order": {"type": "array", "items": {"type": "string"}},
+    "outcome": {"enum": ["works", "crash", "other-failure", "setup-error", "unknown"]},
+    "artifacts": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "intended_behavior_observed": {"type": ["boolean", "null"]},
+    "human_review_status": {"enum": ["pending", "accepted", "rejected"]},
+    "notes": {"type": "string"}
+  }
+}

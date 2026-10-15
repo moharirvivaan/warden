@@ -1,0 +1,7 @@
+{
+  "geode": "5.11.1", "gd": {"mac": "2.2081"},
+  "id": "warden.proof-consumer-guarded", "name": "Warden Proof: Guarded Consumer",
+  "version": "1.0.0", "developer": "Warden",
+  "description": "Controlled repair: adds the optional label only if bottom-menu exists.",
+  "dependencies": {"geode.node-ids": ">=v1.23.3"}
+}

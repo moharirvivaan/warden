@@ -1,4 +1,6 @@
 #include "extraction.hpp"
+#include "ownership.hpp"
+#include "array_bounds.hpp"
 #include <clang/AST/ASTConsumer.h>
 #include <clang/AST/ASTContext.h>
 #include <clang/AST/DeclTemplate.h>
@@ -20,10 +22,25 @@ struct State {
     Inventory& result;
     fs::path root, build;
     std::vector<MacroOrigin> origins;
-    std::set<unsigned> registrations;
+    std::map<unsigned, std::string> registrations;
     bool supportedSdk = false;
+    mutable std::map<std::string, bool> projectFiles;
     State(Inventory& r, fs::path p, fs::path b) : result(r), root(std::move(p)), build(std::move(b)) {}
 };
+void noteSdkFile(SourceLocation loc, const SourceManager& sm, State& state) {
+    auto file=fs::weakly_canonical(sm.getFilename(sm.getSpellingLoc(loc)).str());
+    fs::path suffix;
+    unsigned levels=0;
+    if (file.filename()=="Modify.hpp") {suffix="loader/include/Geode/modify/Modify.hpp";levels=5;}
+    else if (file.filename()=="CCArray.h") {suffix="loader/include/Geode/cocos/cocoa/CCArray.h";levels=6;}
+    else if (file.filename()=="Loader.hpp") {suffix="loader/include/Geode/loader/Loader.hpp";levels=5;}
+    else return;
+    auto sdk=file;for (unsigned i=0;i<levels;++i) sdk=sdk.parent_path();
+    if (sdk/suffix!=file) return;
+    std::ifstream version(sdk/"VERSION");std::string value;version>>value;
+    state.result.sdkVersion=value;state.result.sdkRoot=sdk.string();
+    state.supportedSdk=value=="5.11.1"||value=="5.10.1"||value=="5.8.2";
+}
 Location location(SourceLocation input, const SourceManager& sm, const fs::path& root) {
     if (input.isInvalid()) return {};
     const auto loc = sm.getExpansionLoc(input);
@@ -36,30 +53,52 @@ Location location(SourceLocation input, const SourceManager& sm, const fs::path&
 }
 bool projectLocation(SourceLocation loc, const SourceManager& sm, const State& state) {
     if (loc.isInvalid()) return false;
-    return belongsToProject(sm.getFilename(sm.getExpansionLoc(loc)).str(), state.root, state.build);
+    auto file=sm.getFilename(sm.getExpansionLoc(loc)).str();
+    auto known=state.projectFiles.find(file);
+    if (known!=state.projectFiles.end()) return known->second;
+    return state.projectFiles.emplace(file,belongsToProject(file,state.root,state.build)).first->second;
 }
 class MacroTracker final : public PPCallbacks {
     State& state;
     SourceManager& sm;
 public:
     MacroTracker(State& s, SourceManager& source) : state(s), sm(source) {}
+    void FileChanged(SourceLocation loc, FileChangeReason reason,
+                     SrcMgr::CharacteristicKind, FileID) override {
+        if (reason != EnterFile || !projectLocation(loc, sm, state)) return;
+        auto file = fs::path(sm.getFilename(sm.getExpansionLoc(loc)).str());
+        auto extension = file.extension().string();
+        if (extension == ".h" || extension == ".hpp" || extension == ".hh" || extension == ".hxx")
+            state.result.includedHeaders.push_back(fs::weakly_canonical(file).lexically_relative(state.root).generic_string());
+    }
+    void noteSdk(const MacroInfo* info) {
+        if (!info) return;
+        noteSdkFile(info->getDefinitionLoc(),sm,state);
+    }
+    void MacroDefined(const Token& name, const MacroDirective* directive) override {
+        if (name.getIdentifierInfo() && name.getIdentifierInfo()->getName() == "$modify")
+            noteSdk(directive->getMacroInfo());
+    }
     void MacroExpands(const Token& name, const MacroDefinition& definition,
                       SourceRange range, const MacroArgs* args) override {
         if (!name.getIdentifierInfo()) return;
         auto spelling = name.getIdentifierInfo()->getName();
-        if (spelling == "GEODE_APPLY_MODIFY_FOR_FUNCTION")
-            state.registrations.insert(sm.getExpansionLoc(range.getBegin()).getRawEncoding());
+        if (spelling == "GEODE_APPLY_MODIFY_FOR_FUNCTION" || spelling == "GEODE_APPLY_MODIFY_FOR_CONSTRUCTOR" ||
+            spelling == "GEODE_APPLY_MODIFY_FOR_DESTRUCTOR")
+            state.registrations[sm.getExpansionLoc(range.getBegin()).getRawEncoding()] = spelling.str();
         if (spelling != "$modify" || !projectLocation(range.getBegin(), sm, state)) return;
-        state.origins.push_back({sm.getExpansionLoc(range.getBegin()),
-            args && args->getNumMacroArguments() == 1 ? "anonymous" : "named"});
-        const auto definitionFile = fs::path(sm.getFilename(sm.getSpellingLoc(
-            definition.getMacroInfo()->getDefinitionLoc())).str());
-        // Geode's real Modify.hpp lives at SDK/loader/include/Geode/modify/Modify.hpp.
-        auto sdk = definitionFile.parent_path().parent_path().parent_path().parent_path().parent_path();
-        std::ifstream version(sdk / "VERSION");
-        std::string value; version >> value;
-        state.result.sdkVersion = value; state.result.sdkRoot = sdk.string();
-        state.supportedSdk = definitionFile.filename() == "Modify.hpp" && value == "5.11.1";
+        // $modify is variadic: both public forms occupy one variadic argument.
+        bool named = false;
+        if (args) {
+            unsigned nesting = 0;
+            for (auto token = args->getUnexpArgument(0); !token->is(tok::eof); ++token) {
+                if (token->is(tok::l_paren)) ++nesting;
+                else if (token->is(tok::r_paren) && nesting) --nesting;
+                else if (token->is(tok::comma) && !nesting) named = true;
+            }
+        }
+        state.origins.push_back({sm.getExpansionLoc(range.getBegin()), named ? "named" : "anonymous"});
+        noteSdk(definition.getMacroInfo());
     }
 };
 const CXXMethodDecl* methodArgument(const TemplateArgument& arg) {
@@ -89,6 +128,7 @@ struct ModifiedRecord {
     Modification modification;
     bool scanned = false;
     std::map<const CXXMethodDecl*, std::string> hooks;
+    std::set<std::string> unsupportedMethods;
 };
 class RegistrationVisitor final : public RecursiveASTVisitor<RegistrationVisitor> {
     ASTContext& context;
@@ -99,15 +139,19 @@ public:
     bool TraverseIfStmt(IfStmt* stmt) {
         auto& sm = context.getSourceManager();
         auto site = sm.getExpansionLoc(stmt->getIfLoc());
-        if (stmt->isConstexpr() && state.registrations.contains(site.getRawEncoding())) {
+        auto registration = state.registrations.find(site.getRawEncoding());
+        if (stmt->isConstexpr() && registration != state.registrations.end()) {
             bool active = false;
             if (!stmt->getCond()->EvaluateAsBooleanCondition(active, context)) {
                 state.result.unknown.push_back({"Cannot evaluate Geode registration branch.", record.modification.location});
-            } else if (active) {
+            } else if (active && registration->second == "GEODE_APPLY_MODIFY_FOR_FUNCTION") {
                 auto method = differentMethod(*stmt);
                 if (method && method->getParent()->getCanonicalDecl() == record.record->getCanonicalDecl())
                     record.hooks[method->getCanonicalDecl()] = "GEODE_APPLY_MODIFY_FOR_FUNCTION";
                 else state.result.unknown.push_back({"Cannot resolve method in active Geode registration.", record.modification.location});
+            } else if (active) {
+                record.unsupportedMethods.insert(registration->second == "GEODE_APPLY_MODIFY_FOR_CONSTRUCTOR" ?
+                    "constructor" : "destructor");
             }
             return true;
         }
@@ -119,6 +163,8 @@ class Visitor final : public RecursiveASTVisitor<Visitor> {
     State& state;
     std::map<const CXXRecordDecl*, ModifiedRecord> records;
     std::vector<const CXXMethodDecl*> applications;
+    std::vector<const CallExpr*> queuedCalls;
+    std::vector<const CXXMemberCallExpr*> arrayCalls;
 public:
     Visitor(ASTContext& ctx, State& s) : context(ctx), state(s) {}
     bool shouldVisitTemplateInstantiations() const { return true; }
@@ -129,6 +175,7 @@ public:
         for (const auto& base : decl->bases()) {
             auto specialization = dyn_cast_or_null<ClassTemplateSpecializationDecl>(base.getType()->getAsCXXRecordDecl());
             if (!specialization || specialization->getSpecializedTemplate()->getQualifiedNameAsString() != "geode::Modify") continue;
+            if (state.result.sdkVersion.empty()) noteSdkFile(specialization->getSpecializedTemplate()->getLocation(),sm,state);
             auto target = specialization->getTemplateArgs().get(1).getAsType()->getAsCXXRecordDecl();
             if (!target) continue;
             const MacroOrigin* origin = nullptr;
@@ -141,13 +188,13 @@ public:
             // The class keyword precedes the macro; the declaration name expands at the macro site.
             if (!origin) for (const auto& candidate : state.origins)
                 if (sm.getExpansionLoc(decl->getLocation()) == candidate.location) { origin = &candidate; break; }
-            if (!origin) {
-                state.result.unknown.push_back({"Direct geode::Modify inheritance is outside supported $modify coverage.", declLocation});
+            if (!origin && !state.supportedSdk) {
+                state.result.unknown.push_back({"Direct geode::Modify inheritance requires a resolved, validated SDK.", declLocation});
                 continue;
             }
-            Modification modification{decl->getNameAsString(), target->getQualifiedNameAsString(),
-                origin->form, location(origin->location, sm, state.root)};
-            records.emplace(decl->getCanonicalDecl(), ModifiedRecord{decl, target, modification, false, {}});
+            Modification modification{decl->getQualifiedNameAsString(), target->getQualifiedNameAsString(),
+                origin ? origin->form : "direct", origin ? location(origin->location, sm, state.root) : declLocation};
+            records.emplace(decl->getCanonicalDecl(), ModifiedRecord{decl, target, modification, false, {}, {}});
         }
         return true;
     }
@@ -164,7 +211,15 @@ public:
         auto callee = call->getDirectCallee();
         if (!callee) return true;
         auto name = callee->getQualifiedNameAsString();
-        if (name == "geode::Mod::hook" || name == "geode::Hook::create")
+        if (name == "cocos2d::CCArray::objectAtIndex") {
+            if (state.result.sdkVersion.empty()) noteSdkFile(callee->getCanonicalDecl()->getLocation(),sm,state);
+            if (auto member = dyn_cast<CXXMemberCallExpr>(call)) arrayCalls.push_back(member);
+        }
+        if (name == "geode::Loader::queueInMainThread" || name == "geode::queueInMainThread") {
+            if (state.result.sdkVersion.empty()) noteSdkFile(callee->getCanonicalDecl()->getLocation(),sm,state);
+            queuedCalls.push_back(call);
+        }
+        if (name == "geode::Mod::hook" || name == "geode::Hook::create" || name == "tulip::hook::createHook")
             state.result.unknown.push_back({"Manual/raw hook call is outside supported coverage.", location(call->getExprLoc(), sm, state.root)});
         return true;
     }
@@ -172,13 +227,23 @@ public:
         const auto triple = context.getTargetInfo().getTriple();
         state.result.target = triple.str();
         if (!state.origins.empty() && !state.supportedSdk) {
-            state.result.unknown.push_back({"Unsupported or unresolved SDK: only Geode 5.11.1 is validated.", {}});
+            state.result.unknown.push_back({"Unsupported or unresolved SDK: Geode 5.8.2, 5.10.1 and 5.11.1 are validated.", {}});
             return;
         }
         if (!triple.isMacOSX() || triple.getArch() != llvm::Triple::aarch64) {
             state.result.unknown.push_back({"Unsupported target: only macOS ARM64 is validated.", {}});
             return;
         }
+        if (state.supportedSdk)
+            for (const auto* call : queuedCalls)
+                inspectQueuedOwnership(*call, context, state.result, state.root, state.build);
+        else if (!queuedCalls.empty())
+            state.result.unknown.push_back({"Deferred Cocos ownership requires validated Geode 5.8.2, 5.10.1 or 5.11.1 SDK contracts.", {}});
+        if (state.supportedSdk)
+            for (const auto* call : arrayCalls)
+                inspectArrayBounds(*call, context, state.result, state.root);
+        else if (!arrayCalls.empty())
+            state.result.unknown.push_back({"Array bounds analysis requires resolved, validated Geode SDK contracts.", {}});
         for (const auto* application : applications) {
             auto specialization = cast<ClassTemplateSpecializationDecl>(application->getParent());
             auto derived = specialization->getTemplateArgs().get(0).getAsType()->getAsCXXRecordDecl();
@@ -196,21 +261,31 @@ public:
                 continue;
             }
             for (const auto* method : record.record->methods()) {
-                if (method->isImplicit() || !method->hasBody()) continue;
+                if (method->isImplicit()) continue;
                 Method result{record.modification.name, record.modification.targetClass,
                     method->getNameAsString(), method->getType().getCanonicalType().getAsString(context.getPrintingPolicy()), "",
                     location(method->getLocation(), context.getSourceManager(), state.root)};
                 auto hook = record.hooks.find(method->getCanonicalDecl());
                 if (hook != record.hooks.end()) {
                     result.registration = hook->second; state.result.hooks.push_back(std::move(result));
+                } else if (record.unsupportedMethods.contains(result.name)) {
+                    state.result.unknown.push_back({"Unsupported Geode lifecycle registration: " + result.name, result.location});
                 } else if (isa<CXXConstructorDecl>(method) || isa<CXXDestructorDecl>(method) || method->getNameAsString() == "onModify") {
                     state.result.unknown.push_back({"Lifecycle/constructor/destructor modification is outside supported coverage.", result.location});
                 } else {
-                    bool sameBaseName = false;
+                    bool sameBaseSignature = method->isVirtual();
                     for (const auto* baseMethod : record.base->methods())
-                        sameBaseName |= baseMethod->getNameAsString() == method->getNameAsString();
-                    if (sameBaseName) state.result.unknown.push_back({"Method shares a base name but has no supported registration evidence: " + result.name, result.location});
+                        sameBaseSignature |= baseMethod->getNameAsString() == method->getNameAsString() &&
+                            baseMethod->isStatic() == method->isStatic() && context.hasSameType(baseMethod->getType(), method->getType());
+                    if (sameBaseSignature) state.result.unknown.push_back({"Method matches a base signature but has no supported registration evidence: " + result.name, result.location});
                     else state.result.helpers.push_back(std::move(result));
+                }
+            }
+            for (const auto* declaration : record.record->decls()) {
+                if (auto memberTemplate = dyn_cast<FunctionTemplateDecl>(declaration)) {
+                    if (isa<CXXMethodDecl>(memberTemplate->getTemplatedDecl()))
+                        state.result.unknown.push_back({"Unsupported member template/lifecycle declaration: " +
+                            memberTemplate->getNameAsString(), location(memberTemplate->getLocation(), context.getSourceManager(), state.root)});
                 }
             }
         }

@@ -1,0 +1,45 @@
+{
+  "llvm": "21.1.8",
+  "additional_sdks": {
+    "5.10.1": {
+      "revision": "7e41336f68660b990644f5c3450b6da6ae944560",
+      "mac_binary_url": "https://github.com/geode-sdk/geode/releases/download/v5.10.1/geode-v5.10.1-mac.zip",
+      "mac_binary_sha256": "d9dd5f5c776cec6fba880816e5a6dfbe03e921101d3ae263eab6e60f3f8b1d54"
+    },
+    "5.8.2": {
+      "revision": "2a5fd87433da47d6bf07221774f0cbb25535ae08",
+      "mac_binary_url": "https://github.com/geode-sdk/geode/releases/download/v5.8.2/geode-v5.8.2-mac.zip",
+      "mac_binary_sha256": "5bcdf36f6d5d37fbcfe8d37e167ebe7722df3c21f1302024294f88161e3bd23b"
+    }
+  },
+  "geode": {
+    "version": "5.11.1",
+    "revision": "413ac9b3936373e0983b3ebb8a056a3d39e8541c",
+    "mac_binary_url": "https://github.com/geode-sdk/geode/releases/download/v5.11.1/geode-v5.11.1-mac.zip",
+    "mac_binary_sha256": "9d1fa1683987c3fe3a09921c9d5cba884aac31588c8ed90c8473d3c9a0971f6a"
+  },
+  "bindings": {
+    "revision": "f8aec5d1f3df76d840dfd2609f02cef30dc6efdf",
+    "codegen_url": "https://github.com/geode-sdk/bindings/releases/download/codegen/geode-codegen-mac",
+    "codegen_sha256": "67b8746b724a5e955aa16a402a0279a55168c738b3a55f1a63086ff2da62b17d"
+  },
+  "example": {
+    "revision": "86696b8eea13d95975ff55f97c1a827ee133f22a",
+    "main_sha256": "ac9e4dbfc2511c545eb8bd799e13db7f610776966705f69478a6bc159f0a3e56"
+  },
+  "benchmarks": {
+    "nodeids": {
+      "repository": "geode-sdk/NodeIDs",
+      "revision": "fc9b3aa12a4eee67f0d26e3f115190cba2deddf1",
+      "sdk": "5.8.2",
+      "pch": "configured Geode umbrella headers, built with Clang 21.1.8"
+    },
+    "betterinfo_bounds": {
+      "repository": "Cvolton/betterinfo-geode",
+      "baseline_revision": "04365ad20d13bd9618413f134fba6ff9ada074b7",
+      "repair_revision": "7afad587dede7309eddfc7e582c31a0dd8c5572a",
+      "sdk": "5.10.1",
+      "scope": "selected BIViewLayer.cpp source comparison; no runtime reproduction"
+    }
+  }
+}

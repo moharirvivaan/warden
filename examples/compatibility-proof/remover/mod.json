@@ -1,0 +1,7 @@
+{
+  "geode": "5.11.1", "gd": {"mac": "2.2081"},
+  "id": "warden.proof-remover", "name": "Warden Proof: Node Remover",
+  "version": "1.0.0", "developer": "Warden",
+  "description": "Controlled test only: removes the main menu bottom-menu node.",
+  "dependencies": {"geode.node-ids": ">=v1.23.3"}
+}

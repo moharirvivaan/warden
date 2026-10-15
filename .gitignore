@@ -5,4 +5,5 @@ build*/
 .superpowers/
 __pycache__/
 *.pyc
+.cache-test.log
 .git-worktree-pointer.backup

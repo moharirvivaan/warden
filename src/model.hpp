@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <string>
 #include <vector>
+#include <optional>
 #include <llvm/Support/JSON.h>
 
 namespace warden {
@@ -30,12 +31,31 @@ struct FileResult {
     std::string file, status = "complete";
     std::vector<Diagnostic> diagnostics;
     std::vector<std::string> arguments;
+    std::string kind = "translation_unit";
+    std::string directory = "";
+};
+struct RelatedLocation {
+    std::string role;
+    Location location;
+};
+struct Repair {
+    std::string file, sha256, expected, replacement;
+    uint64_t startByte = 0, endByte = 0;
+};
+struct Finding {
+    std::string rule, severity, evidence, variable, message, suggestion, limitations, factoryContract;
+    Location location;
+    std::vector<RelatedLocation> related;
+    std::optional<Repair> repair;
 };
 struct Inventory {
     std::vector<Method> hooks, helpers;
     std::vector<Modification> modifications;
     std::vector<Unknown> unknown;
     std::string sdkVersion, sdkRoot, target;
+    std::vector<std::string> includedHeaders;
+    std::vector<Finding> findings;
+    std::vector<Location> queuedCallbacks, retainingCaptures;
 };
 struct Report : Inventory {
     std::string status = "complete", root, database;
